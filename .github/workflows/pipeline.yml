@@ -1,6 +1,5 @@
-# Data pipeline (SPEC.md §1). Hourly at :15 UTC, plus a manual "Run workflow" button.
-# P0: runs fetch-matches.js only. P1 switches this to run-pipeline.js and passes
-# the optional match input through as --match <id>.
+# Data + generation pipeline (SPEC.md §1, §3.1). Hourly at :15 UTC, plus a manual "Run workflow"
+# button whose optional match input is passed on as --match <id>.
 name: pipeline
 
 on:
@@ -22,23 +21,24 @@ permissions:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Fetch teams and matches
+      - name: Fetch matches, generate and check comments
         env:
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MATCH_ID: ${{ inputs.match }}
+          MATCH_ID: ${{ inputs.match }}   # via env, never interpolated into the script
         run: |
           if [ -n "$MATCH_ID" ]; then
-            echo "match input '$MATCH_ID' is ignored until P1 (run-pipeline.js); fetching all matches"
+            node scripts/run-pipeline.js --match "$MATCH_ID"
+          else
+            node scripts/run-pipeline.js
           fi
-          node scripts/fetch-matches.js

@@ -141,8 +141,7 @@ async function fetchMatches({ supabase = getServiceClient(), api = new FootballD
   return { dateFrom, dateTo, teams, matches };
 }
 
-async function main() {
-  const result = await fetchMatches();
+function logFetchSummary(result) {
   const { teams, matches } = result;
   console.log(`teams: ${teams.count} current-season rows upserted` +
     (teams.inserted.length ? `; new: ${teams.inserted.join(', ')}` : '') +
@@ -152,6 +151,10 @@ async function main() {
   console.log(`score corrections: ${matches.corrections.length ? matches.corrections.join(', ') : 'none'}`);
 }
 
+async function main() {
+  logFetchSummary(await fetchMatches());
+}
+
 if (require.main === module) {
   main().catch((err) => {
     console.error(`fetch-matches failed: ${err.message}`);
@@ -159,4 +162,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fetchMatches, toMatchRow };
+module.exports = { fetchMatches, logFetchSummary, toMatchRow };

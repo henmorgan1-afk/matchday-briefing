@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026); P1–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4 Oct 2026 during the P0 build (see "Revision 3" in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built on branch `p1-generation-pipeline` and passing `check-p1.js` on all four finished matchday-5 matches (4 Oct 2026), not yet merged to `main`. P2–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4 Oct 2026 during the P0 and P1 builds (see "Revision 3" and "Revision 4" in §0).
 
 ## How this document is used
 
@@ -57,6 +57,55 @@ Decisions made while building P0. Where they differ from §1, §2, §7 or §9, t
    - it exercises the GRANTs with the publishable key: reads of `teams`/`matches`/`comments` succeed; reads of `feedback`/`sessions` and insert/update/delete on `teams`/`matches` are refused with "permission denied". Write probes target a non-existent id, so a wrong grant can't damage data.
 
 **P0 findings (recorded per §7):** the free tier returns half-time scores (non-null for 4/4 finished matches) and matchday (non-null for 13/13 matches), so the §3.5 `half_time` and `matchday` fields will normally be populated; they stay nullable in case a match lacks them. A single 21-day `dateFrom`/`dateTo` request on the competition matches endpoint is accepted, so §1's window needs no splitting.
+
+### Revision 4 (4 Oct 2026, P1 build)
+
+Decisions made while building P1. Where they differ from §1, §3, §8 or §9, this note takes precedence. The §3.4 prompt text is unchanged.
+
+1. **Models confirmed, and fixed in code.** Before any generation call, the free models-list endpoint confirmed that `claude-sonnet-5` and `claude-haiku-4-5-20251001` are both available to the project's API key. Both IDs are constants in `claude-client.js` with no env override, so a stored `prompt_version` always means the same models. `PROMPT_VERSION` doesn't include the model ID: changing `GENERATION_MODEL` alone leaves it unchanged, which P5 comparisons need to allow for.
+2. **Call settings** (the spec was silent). Each call is a single user message holding the filled template, with no system prompt. It uses adaptive thinking at the model's default effort and `max_tokens` 16000. The SDK retries 408/409/429/5xx and connection errors up to 4 times with backoff before a call counts as "failed outright". There is no structured-outputs mode: the prompts ask for JSON in prose and are loaded verbatim, so replies are parsed as text, tolerating a ```` ```json ```` fence or a surrounding sentence.
+3. **Templates and `PROMPT_VERSION`.** `prompts/*.md` hold the §3.4 code blocks byte-for-byte. Line endings are normalised to LF on load: this repo is checked out with CRLF on Windows (`core.autocrlf`) and LF on the Actions runner, and without normalising, the same prompt would get two versions. `PROMPT_VERSION` is the first 8 hex characters of SHA-256 over the generation prompt, a NUL byte, the checker prompt, a NUL byte, and `JSON.stringify(TARGET_MIX)`. The current value is `f9cbb96a`.
+4. **`TARGET_MIX` guard.** The generation prompt states the mix in prose ("exactly 8", "2 STAT", "3 BANTER", "3 HOT_TAKE", "a list of 8"). `generate-comments.js` refuses to generate if those numbers disagree with `TARGET_MIX`. Editing one without the other therefore fails loudly, instead of changing `PROMPT_VERSION` without changing what the model is asked for.
+5. **Candidate handling.**
+   - `{{comment_json}}` is `{ type, text, note }`. The checker sees the note because users see it too.
+   - An item with an invalid type, empty text or an empty note fails locally, without a checker call. Types are normalised for case and for spaces or hyphens versus underscores.
+   - Only the first 8 well-formed items are checked. Any extra items fail as "beyond the first 8 candidates".
+   - Checks run 4 at a time. After an outright failure, no new check starts, since the attempt is void.
+   - Checker verdicts fail closed. A refusal, an unparseable reply, or a result other than `pass`/`fail` counts as `fail`, not as an outright failure.
+   - A generation refusal or unparseable reply yields zero candidates and counts as an attempt (§3.1 step 3).
+6. **Failed writes and counter safety.** If inserting an attempt's passing rows fails, it's treated like an outright model failure: the increment is undone, the run exits non-zero, and the perspective is retried next run. Attempt counters are moved with a compare-and-set (`update … where counter = n`), so an overlapping manual run and scheduled run can't claim the same attempt.
+7. **Which matches a run considers.** A run without `--match` considers every stored `finished` match with a perspective under `MAX_GENERATION_ATTEMPTS`, not only matches in the 14-day fetch window. It reads live-comment counts page by page. Summary lines are printed only for matches where something was attempted. With `--match`, the match is always printed.
+8. **`--dry-run`** skips the fetch, because §3.1 step 1 writes to Supabase, and reads the stored match instead. It prints its JSON on stdout and its logs on stderr, and saves the same JSON to `review/dryrun-<match id>.json`. `review/` is gitignored and is there for a human to read before lines go live. The dry run exits non-zero if any model call fails outright.
+9. **Run output.**
+   - `generation calls this run: N` counts generation calls only. The run also prints `safety-check calls this run: M` and `model tokens this run: X input, Y output`. Only calls that returned a response, and so were billed, are counted.
+   - Each perspective is summarised as `<slug>: P/R passed (attempt n)`, where R is the number of items the model returned.
+   - A second attempt in the same run appends `, then P/R passed (attempt 2)`.
+   - `[W written]` is appended when duplicates or the cap dropped passing lines.
+   - A perspective that wasn't attempted shows `<slug>: N stored`, plus "(attempt cap reached)" when N is under `MIN_PASSING_COUNT`.
+10. **`check-p1.js` details.**
+    - "Nothing is written" is checked against what only P1 writes: the `comments` row count, the newest `created_at`, and the match's two attempt counters. `matches` and `teams` aren't compared, because the hourly fetch on `main` may legitimately update them during the check.
+    - The ≥4 rule counts distinct passing texts.
+    - Number detection counts digit runs anywhere, so "2nd" is 2, plus the §9 number words as whole words only, so "someone" holds no "one". Hyphenated words are read separately, so "twenty-one" is 20 and 1.
+    - The allowed numbers come from the stored match via `buildMatchData`, not from the dry run's own output.
+    - `check-p1.js` exports `numbersIn`/`allowedNumbers` for `check-p5.js` to reuse.
+11. **`kickoff_date`** uses fixed English abbreviations ("Sep"), because `Intl`'s en-GB format now prints "Sept".
+12. **Workflow.**
+    - `pipeline.yml` now runs `run-pipeline.js`. The match input is passed through an env var (never interpolated into the script) as `--match "<id>"`.
+    - `actions/checkout` and `actions/setup-node` moved to v7. Both run on node24. Their breaking changes (fork-PR checkout blocked under `pull_request_target`/`workflow_run`; automatic caching limited to npm) don't affect this workflow.
+    - `timeout-minutes` went from 15 to 30. A job killed mid-attempt leaves that attempt counted with nothing written, so it needs headroom for rate-limit backoff. Measured runs take about 40 s per match.
+13. **Not built in P1:** `verify.js` and the `verify` npm script (§8). They chain `check-p2.js` and `check-p3.js`, which don't exist yet.
+
+**P1 findings.**
+- All four finished matchday-5 matches (560582, 560583, 560585, 560590) passed `check-p1.js` on their first dry run, with 7–8 of 8 candidates passing per perspective.
+- Each dry run took 31–42 s and made 2 generation and 16 safety-check calls, using about 16.2k input and 4–6k output tokens. That's about US$0.08–0.09 per match at Sonnet 5's $2/$10 per MTok, or roughly $32 a season for 380 matches before retries.
+- Dry-run lines are samples, not what testers will see. A real run generates afresh.
+
+The dry runs also showed gaps for P5's prompt and rubric work. None is fixed here, because §3.4 is loaded verbatim:
+- §6 bans league position, the table, form and season records from every line, but both prompts state that rule only for `STAT`. Passing `HOT_TAKE`/`BANTER` lines include "champions elect", "mid-table", "the recurring issue all season" and "not our sharpest start of the season". §3.3's own example, "worst first half I've seen from us all season", has the same tension.
+- Venue names, which aren't in the match data, pass even in a `STAT` line ("Goalless at the break at the Cottage").
+- The checker is inconsistent on scores in `BANTER`: it failed "put three past City" but passed "we never do a routine 1-0". `check-p1.js`'s number check covers `STAT` lines only.
+- The generation prompt recommends "not at the races". The checker failed one use of it as implying lack of effort and passed two others.
+- One passing `HOT_TAKE` implies a goal order the data doesn't have ("…get to 2 goals before the break while we were already up").
 
 ## 1. Architecture
 
