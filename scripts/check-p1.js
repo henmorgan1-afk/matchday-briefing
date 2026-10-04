@@ -29,7 +29,17 @@ function numbersIn(text) {
   return found;
 }
 
-// The numbers a STAT line may contain, from one perspective's match data (SPEC.md §9).
+// SPEC.md §9 / Revision 5: no passing line may contain these. Matched case-insensitively at the start of
+// a word with any ending ("champions", "relegated"), so "comfortable" doesn't trip "table"; a space or
+// hyphen counts as the gap in multi-word terms.
+const BANNED_TERMS = Object.freeze(['champion', 'title', 'table', 'mid-table', 'top four', 'relegat', 'league position']);
+const BANNED_PATTERN = new RegExp(`\\b(?:${BANNED_TERMS.map((t) => t.split(/[\s-]+/).join('[\\s-]+')).join('|')})`, 'gi');
+
+function bannedTermsIn(text) {
+  return [...String(text).matchAll(BANNED_PATTERN)].map((m) => m[0]);
+}
+
+// The numbers a STAT or HOT_TAKE line may contain, from one perspective's match data (SPEC.md §9).
 function allowedNumbers(matchData) {
   const allowed = new Set();
   const add = (v) => { if (Number.isInteger(v)) allowed.add(v); };
@@ -108,7 +118,7 @@ async function main() {
   }
 
   const totals = [];
-  let statLinesChecked = 0;
+  let linesChecked = 0;
   if (output) {
     info(`match ${output.match_id}: ${output.match} ${output.score}; prompt_version ${output.prompt_version}; ` +
       `calls: ${output.calls.generation} generation, ${output.calls.safety_check} safety-check`);
@@ -133,18 +143,21 @@ async function main() {
 
       // Allowed numbers come from the stored match, not from the dry run's own output.
       const allowed = allowedNumbers(buildMatchData(match, team, opponent));
-      const seen = [];
-      for (const c of passing.filter((x) => x.type === 'STAT')) {
-        statLinesChecked += 1;
+      const seen = Object.fromEntries(COMMENT_TYPES.map((t) => [t, []]));
+      for (const c of passing) {
+        linesChecked += 1;
         for (const n of numbersIn(c.text)) {
-          seen.push(n.token);
-          if (!allowed.has(n.value)) fail(`${team.slug}: STAT line uses ${JSON.stringify(n.token)} (${n.value}), not in its match data: ${JSON.stringify(c.text)}`);
+          seen[c.type]?.push(n.token);
+          if (c.type === 'BANTER') fail(`${team.slug}: BANTER line contains a number, ${JSON.stringify(n.token)}: ${JSON.stringify(c.text)}`);
+          else if (!allowed.has(n.value)) fail(`${team.slug}: ${c.type} line uses ${JSON.stringify(n.token)} (${n.value}), not in its match data: ${JSON.stringify(c.text)}`);
         }
+        for (const term of bannedTermsIn(c.text)) fail(`${team.slug}: ${c.type} line contains banned term ${JSON.stringify(term)}: ${JSON.stringify(c.text)}`);
       }
 
       const byType = COMMENT_TYPES.map((t) => `${t} ${passing.filter((c) => c.type === t).length}`).join(', ');
-      info(`${team.slug}: ${passing.length}/${p.candidates.length} passed (${byType}); STAT numbers ` +
-        `${seen.length ? seen.join(', ') : 'none'} vs allowed {${[...allowed].sort((a, b) => a - b).join(', ')}}`);
+      const numbers = COMMENT_TYPES.map((t) => `${t} [${seen[t].join(', ')}]`).join(' ');
+      info(`${team.slug}: ${passing.length}/${p.candidates.length} passed (${byType}); numbers ${numbers} ` +
+        `vs allowed {${[...allowed].sort((a, b) => a - b).join(', ')}}`);
       totals.push(`${team.slug} ${passing.length}/${p.candidates.length}`);
     }
   }
@@ -157,7 +170,8 @@ async function main() {
     return;
   }
   console.log(`PASS check-p1: match ${matchId} dry run — ${totals.join(', ')} passing; every type and note valid; ` +
-    `every number in ${statLinesChecked} passing STAT line(s) is in the match data; nothing written to Supabase`);
+    `${linesChecked} passing lines: STAT/HOT_TAKE numbers all in the match data, no numbers in BANTER, no banned terms; ` +
+    'nothing written to Supabase');
 }
 
 if (require.main === module) {
@@ -167,4 +181,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { numbersIn, allowedNumbers, NUMBER_WORDS };
+module.exports = { numbersIn, allowedNumbers, bannedTermsIn, NUMBER_WORDS, BANNED_TERMS };

@@ -18,6 +18,16 @@ Rules for every comment:
 - Never describe a specific incident that isn't in the match data (a goal
   by a particular player or at a particular time, a penalty, a card, a VAR
   call, a save, an injury).
+- Never claim anything about league position, titles, the table, form, or
+  other matches this season or in past seasons (no "champions elect", no
+  "mid-table", no "the recurring issue all season"). A clearly personal
+  superlative opinion, like "worst first half I've seen from us all
+  season", is fine.
+- Never name a venue, stadium or ground.
+- Never claim anything about the order or timing of goals beyond what the
+  half-time and full-time scores show (no "while we were already up", no
+  "late winner"). Say "came from behind" only when half_time_comeback is
+  true.
 - Never contradict the match data, even in an opinion.
 
 Write exactly 8 comments in this mix:
@@ -26,8 +36,12 @@ Write exactly 8 comments in this mix:
   points, clean sheet, home or away, matchday, date). Nothing else — no
   league position, no form, no season records.
 - 3 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
-  match's specific events and does NOT state any specific date, score, or named
-  past incident (you have no way to verify those, so don't invent them).
+  match's specific events. No numbers or scorelines of any kind, not even
+  number words like "one" or "nil". No claims about how past meetings
+  between the teams went (no "we never do a routine 1-0", no "every fixture
+  against them turns into a basketball score"), and no specific date or
+  named past incident (you have no way to verify those, so don't invent
+  them).
 - 3 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played,
   as a whole. Positive takes can be as enthusiastic as you like. Negative
   takes can be just as strong about PERFORMANCE ("worst first half I've seen
@@ -42,7 +56,7 @@ not polished prose:
   "I'll be honest,", "Say what you like, but".
 - Real idiom, used sparingly and only where it fits: "put in a shift",
   "game management", "backs against the wall", "second best all over the
-  pitch", "job done", "not at the races", "a game of two halves".
+  pitch", "job done", "a game of two halves".
 - Clipped, spoken rhythm over tidy essay sentences — short clauses, the
   odd sentence fragment, dashes instead of semicolons.
 - STAT lines read like a live-text snippet (terse, present-feeling: "Two
