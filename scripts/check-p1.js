@@ -18,21 +18,42 @@ const NUMBER_WORDS = Object.freeze({
   nineteen: 19, twenty: 20,
 });
 
+const isNumberWord = (token) => Object.prototype.hasOwnProperty.call(NUMBER_WORDS, token);
+const ONE_COUNTS_BEFORE = new Set(['goal', 'goals', 'point', 'points']);
+
+// Revision 6: a standalone "one" counts only in a score form, joined by a hyphen or en dash with no
+// spaces to another number or to "all" ("one-nil", "two-one", "one-all"), or before goal(s)/point(s)
+// ("one goal", "one-point"). Idioms such as "one of", "in one game" and "no one" are ignored. A spaced
+// dash is punctuation, so "matchday 5 - one of those" doesn't count it.
+function oneCounts(text, tokens, i) {
+  const [prev, self, next] = [tokens[i - 1], tokens[i], tokens[i + 1]];
+  const joined = (a, b) => a && b && /^[-–]$/.test(text.slice(a.end, b.start));
+  const isNumber = (t) => /^\d+$/.test(t.token) || isNumberWord(t.token);
+  if (joined(prev, self) && isNumber(prev)) return true;
+  if (joined(self, next) && (isNumber(next) || next.token === 'all')) return true;
+  return Boolean(next && /^[\s-]+$/.test(text.slice(self.end, next.start)) && ONE_COUNTS_BEFORE.has(next.token));
+}
+
 // Every number in a line, as { token, value }. Words are whole tokens only, so "someone" holds no "one";
 // digits are matched even inside tokens, so "2nd" holds 2.
 function numbersIn(text) {
+  const lower = String(text).toLowerCase();
+  const tokens = [...lower.matchAll(/\d+|[a-z]+/g)].map((m) => ({ token: m[0], start: m.index, end: m.index + m[0].length }));
   const found = [];
-  for (const token of String(text).toLowerCase().match(/\d+|[a-z]+/g) ?? []) {
+  tokens.forEach(({ token }, i) => {
     if (/^\d+$/.test(token)) found.push({ token, value: Number(token) });
-    else if (Object.prototype.hasOwnProperty.call(NUMBER_WORDS, token)) found.push({ token, value: NUMBER_WORDS[token] });
-  }
+    else if (isNumberWord(token) && (token !== 'one' || oneCounts(lower, tokens, i))) found.push({ token, value: NUMBER_WORDS[token] });
+  });
   return found;
 }
 
-// SPEC.md §9 / Revision 5: no passing line may contain these. Matched case-insensitively at the start of
-// a word with any ending ("champions", "relegated"), so "comfortable" doesn't trip "table"; a space or
-// hyphen counts as the gap in multi-word terms.
-const BANNED_TERMS = Object.freeze(['champion', 'title', 'table', 'mid-table', 'top four', 'relegat', 'league position']);
+// SPEC.md §9 / Revisions 5 and 6: no passing line may contain these. Matched case-insensitively at the
+// start of a word with any ending ("champions", "relegated", "tonight's"), so "comfortable" doesn't trip
+// "table"; a space or hyphen counts as the gap in multi-word terms.
+const BANNED_TERMS = Object.freeze([
+  'champion', 'title', 'table', 'mid-table', 'top four', 'relegat', 'league position',
+  'today', 'tonight', 'yesterday', 'last night', 'this weekend', 'this morning',
+]);
 const BANNED_PATTERN = new RegExp(`\\b(?:${BANNED_TERMS.map((t) => t.split(/[\s-]+/).join('[\\s-]+')).join('|')})`, 'gi');
 
 function bannedTermsIn(text) {

@@ -106,6 +106,7 @@ async function runAttempt(matchData, stats, deps) {
       note: c.note,
       result: verdict ? verdict.result : 'fail',
       reason: verdict ? verdict.reason : c.rejected,
+      rule_checks: verdict?.rules, // the checker's per-rule verdicts, for review; never stored
     };
   });
   return {

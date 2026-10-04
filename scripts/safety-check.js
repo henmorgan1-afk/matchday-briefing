@@ -15,11 +15,22 @@ function readVerdict(text, stopReason) {
   } catch (err) {
     return { result: 'fail', reason: `unparseable checker reply (stop_reason ${stopReason}): ${err.message}` };
   }
+  // Revision 6: the checker rules on each rule in turn before its overall verdict. A rule it marked
+  // "fail" fails the comment even if the overall result says "pass". A missing list doesn't fail it.
+  const rules = (Array.isArray(verdict?.rules) ? verdict.rules : []).map((r) => ({
+    rule: String(r?.rule ?? ''),
+    result: String(r?.result ?? '').trim().toLowerCase(),
+    reason: String(r?.reason ?? ''),
+  }));
+  const failedRule = rules.find((r) => r.result === 'fail');
   const result = String(verdict?.result ?? '').trim().toLowerCase();
   const reason = typeof verdict?.reason === 'string' ? verdict.reason.trim() : '';
-  if (result === 'pass') return { result: 'pass', reason };
-  if (result === 'fail') return { result: 'fail', reason: reason || '(checker gave no reason)' };
-  return { result: 'fail', reason: `checker returned result ${JSON.stringify(verdict?.result)}, not "pass" or "fail"` };
+  if (result === 'pass' && failedRule) {
+    return { result: 'fail', reason: `overall "pass" but rule "${failedRule.rule}" failed: ${failedRule.reason}`, rules };
+  }
+  if (result === 'pass') return { result: 'pass', reason, rules };
+  if (result === 'fail') return { result: 'fail', reason: reason || failedRule?.reason || '(checker gave no reason)', rules };
+  return { result: 'fail', reason: `checker returned result ${JSON.stringify(verdict?.result)}, not "pass" or "fail"`, rules };
 }
 
 // The checker sees the note too: it's shown to users under the line, so it must be safe to say.

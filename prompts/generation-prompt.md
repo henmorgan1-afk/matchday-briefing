@@ -20,34 +20,44 @@ Rules for every comment:
   call, a save, an injury).
 - Never claim anything about league position, titles, the table, form, or
   other matches this season or in past seasons (no "champions elect", no
-  "mid-table", no "the recurring issue all season"). A clearly personal
-  superlative opinion, like "worst first half I've seen from us all
-  season", is fine.
+  "mid-table", no "the recurring issue all season"). That includes trends,
+  which imply other matches (no "really starting to organise itself", no
+  "finally clicking"). A clearly personal superlative opinion, like "worst
+  first half I've seen from us all season", is fine.
 - Never name a venue, stadium or ground.
 - Never claim anything about the order or timing of goals beyond what the
   half-time and full-time scores show (no "while we were already up", no
-  "late winner"). Say "came from behind" only when half_time_comeback is
-  true.
+  "late winner", no "we matched them goal for goal"). Say "came from
+  behind" only when half_time_comeback is true.
+- Never tie a line to when it's read: people read these days later. No
+  "today", "tonight", "yesterday", "last night", "this weekend" or "this
+  morning".
 - Never contradict the match data, even in an opinion.
 
 Write exactly 8 comments in this mix:
 - 2 STAT: a short line whose every specific claim is drawn directly from
   the match data above (final score, half-time score if present, result,
   points, clean sheet, home or away, matchday, date). Nothing else — no
-  league position, no form, no season records.
+  league position, no form, no season records. Number words count as
+  numbers ("one", "nil", "three") and must match the match data too.
 - 3 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
   match's specific events. No numbers or scorelines of any kind, not even
-  number words like "one" or "nil". No claims about how past meetings
-  between the teams went (no "we never do a routine 1-0", no "every fixture
-  against them turns into a basketball score"), and no specific date or
-  named past incident (you have no way to verify those, so don't invent
-  them).
+  number words like "one" or "nil". It can say how a fixture, an atmosphere
+  or a club's fans feel or behave ("always feels like a proper occasion",
+  "their fans never need an excuse"). It must not say anything about what
+  happened on the pitch in past meetings, including style of play (no "we
+  never do a routine 1-0", no "every fixture against them turns into a
+  basketball score", no "always try and rough us up", no "we always
+  struggle there"), and no specific date or named past incident (you have
+  no way to verify those, so don't invent them).
 - 3 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played,
   as a whole. Positive takes can be as enthusiastic as you like. Negative
   takes can be just as strong about PERFORMANCE ("worst first half I've seen
   from us all season", if the half-time score allows it) but must never imply
   the team, its players or staff didn't try, were dishonest, cheated, or say
-  anything about life off the pitch — even hedged as opinion.
+  anything about life off the pitch — even hedged as opinion. Number words
+  count as numbers ("one", "three") and, like digits, must match the match
+  data.
 
 Voice reference — real patterns pulled from how pundits and fans actually
 talk (Match of the Day analysis, phone-in shows, live text commentary),
