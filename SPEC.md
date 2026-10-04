@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: spec only, no code written yet. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, and revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026); P1–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4 Oct 2026 during the P0 build (see "Revision 3" in §0).
 
 ## How this document is used
 
@@ -39,6 +39,24 @@ A review before any code was written found gaps that would either break the buil
 - **No named individuals and no specific in-match incidents in any line** (§3.3). With no lineup, squad or event data, the model can't know who played, who is still at the club, or whether a penalty or red card happened, so any such line would be an unverifiable claim. `HOT_TAKE` lines are now about how a *team* played. This narrows the design doc's "real named players" framing for this build only; it returns once a data source with lineups and events exists (§6).
 - **Score corrections supersede old comments** (§3.6). If football-data.org changes a finished match's score after comments were generated, those comments are hidden and the match is regenerated, so a stale scoreline is never shown.
 - **League position, table and form are not used in lines** (§3.5). Unlike the final score, they change after later matches, so a cached line quoting them would go stale.
+
+### Revision 3 (4 Oct 2026, P0 build)
+
+Decisions made while building P0. Where they differ from §1, §2, §7 or §9, this note takes precedence.
+
+1. **Full §2 schema ships in P0.** `supabase/schema.sql` creates all five tables (`teams`, `matches`, `comments`, `feedback`, `sessions`), their enums, RLS policies and GRANTs now, rather than adding `comments` in P1 and `feedback`/`sessions` in P4. Reason: P0's score-correction rule (§3.6) supersedes rows in `comments`, and the schema only has to be applied once. This is DDL only; no P1 code was written. The file is safe to re-run in the SQL Editor.
+2. **Explicit GRANTs, including `service_role`.** The Supabase project has "automatically expose new tables" off and automatic RLS on, so no role gets table privileges by default. `schema.sql` therefore:
+   - grants `anon` exactly what the §2 RLS policies allow: `SELECT` on `teams`/`matches`/`comments`, `INSERT` on `feedback`/`sessions`, nothing else;
+   - grants `service_role` `SELECT`/`INSERT`/`UPDATE`/`DELETE` on all five tables. The secret key bypasses RLS but still needs GRANTs, or every pipeline write fails;
+   - grants `authenticated` nothing (this build has no accounts).
+   Because `anon` can't `SELECT` from `feedback`/`sessions`, P4's frontend inserts must use `Prefer: return=minimal`.
+   The keys are Supabase's new `sb_publishable_`/`sb_secret_` keys, stored under the existing `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` names; no variable names change.
+3. **`pipeline.yml` runs `fetch-matches.js` until P1.** `run-pipeline.js` is a P1 file, so the hourly/manual workflow invokes `node scripts/fetch-matches.js` for now, with the trigger block exactly as in §1. The optional `match` input is accepted but ignored until P1, which switches the job to `run-pipeline.js` and passes it on as `--match <id>`.
+4. **`check-p0.js` status rule.** `SUSPENDED` and `AWARDED` are deliberately mapped to `other` (§2.2), so landing in `other` is not a failure by itself. The check fails only on an API status that isn't a key in `STATUS_MAP` at all, or on a stored `status` that doesn't equal `STATUS_MAP[api_status]`; statuses deliberately mapped to `other` are printed. `check-p0.js` also goes beyond §9 in two ways:
+   - it checks every `FINISHED` match in the pipeline's full 14-day look-back (stored as `finished`, full-time and half-time scores equal to the API's), not only the last 7 days, so the check still tests real data during an international break, and says so when the 7-day window is empty;
+   - it exercises the GRANTs with the publishable key: reads of `teams`/`matches`/`comments` succeed; reads of `feedback`/`sessions` and insert/update/delete on `teams`/`matches` are refused with "permission denied". Write probes target a non-existent id, so a wrong grant can't damage data.
+
+**P0 findings (recorded per §7):** the free tier returns half-time scores (non-null for 4/4 finished matches) and matchday (non-null for 13/13 matches), so the §3.5 `half_time` and `matchday` fields will normally be populated; they stay nullable in case a match lacks them. A single 21-day `dateFrom`/`dateTo` request on the competition matches endpoint is accepted, so §1's window needs no splitting.
 
 ## 1. Architecture
 

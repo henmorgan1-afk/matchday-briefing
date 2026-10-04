@@ -1,0 +1,18 @@
+{
+  "name": "matchday-briefing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Matchday Briefing prototype — data pipeline, generation and PWA frontend (see SPEC.md)",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "fetch": "node scripts/fetch-matches.js",
+    "check:p0": "node scripts/check-p0.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "dotenv": "^18.0.5"
+  }
+}
