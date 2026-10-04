@@ -1,0 +1,696 @@
+<title>Matchday Briefing</title>
+<style>
+  :root{
+    --bg:#F2F4EE; --surface:#FFFFFF; --surface-2:#F8F9F4; --border:#DBE1D3;
+    --ink:#152018; --ink-dim:#5A6B5E;
+    --brand:#1F5C39; --brand-ink:#FFFFFF;
+    --stat:#2A5C99; --stat-bg:#E3ECF8; --stat-border:#C4D6EF;
+    --banter:#B15E17; --banter-bg:#F6E7D6; --banter-border:#EACBA0;
+    --hot:#8A6300; --hot-bg:#F8ECC4; --hot-border:#E9D48F;
+    --up:#1F5C39; --down:#A23B34;
+    --shadow: 0 1px 2px rgba(20,30,20,.06), 0 6px 16px rgba(20,30,20,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0E1410; --surface:#161D18; --surface-2:#1C241E; --border:#2B352C;
+      --ink:#EDEFE9; --ink-dim:#9FAC9F;
+      --brand:#5FB37E; --brand-ink:#0E1410;
+      --stat:#8FB6E6; --stat-bg:#1B2A3C; --stat-border:#2C4363;
+      --banter:#E2A05C; --banter-bg:#33260F; --banter-border:#4A3618;
+      --hot:#E5C15A; --hot-bg:#332A0C; --hot-border:#4A3D11;
+      --up:#5FB37E; --down:#E08278;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 20px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E1410; --surface:#161D18; --surface-2:#1C241E; --border:#2B352C;
+    --ink:#EDEFE9; --ink-dim:#9FAC9F;
+    --brand:#5FB37E; --brand-ink:#0E1410;
+    --stat:#8FB6E6; --stat-bg:#1B2A3C; --stat-border:#2C4363;
+    --banter:#E2A05C; --banter-bg:#33260F; --banter-border:#4A3618;
+    --hot:#E5C15A; --hot-bg:#332A0C; --hot-border:#4A3D11;
+    --up:#5FB37E; --down:#E08278;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 20px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  .app{ max-width: 640px; margin-inline: auto; padding-inline: 16px; }
+
+  .topbar{
+    position: sticky; top: env(safe-area-inset-top, 0px);
+    background: var(--bg);
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding-block: 16px 12px; border-bottom: 1px solid var(--border);
+    z-index: 5;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .brand-mark{
+    flex: none; width:36px; height:36px; border-radius:8px;
+    background: var(--brand); color: var(--brand-ink);
+    font-family:"Oswald", "Arial Narrow", sans-serif; font-weight:700; font-size:15px;
+    display:flex; align-items:center; justify-content:center; letter-spacing:.02em;
+  }
+  .brand-text{ display:flex; flex-direction:column; min-width:0; line-height:1.15; }
+  .brand-name{
+    font-family:"Oswald","Arial Narrow",sans-serif; font-weight:600; font-size:18px;
+    letter-spacing:.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .brand-tag{ font-size:12px; color: var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .proto-badge{
+    flex:none; font-family:"Space Mono", "SFMono-Regular", Consolas, monospace;
+    font-size:10.5px; color: var(--ink-dim); border:1px solid var(--border);
+    border-radius:999px; padding:4px 10px; white-space:nowrap;
+  }
+
+  .view{ padding-block: 20px 40px; }
+  .view.fade{ animation: fadein .22s ease both; }
+  @keyframes fadein{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:none; } }
+
+  .section-label{
+    display:block; font-family:"Space Mono", Consolas, monospace; text-transform:uppercase;
+    font-size:11px; letter-spacing:.09em; color: var(--ink-dim); margin-block-end:10px;
+  }
+  .search-wrap{ margin-block-end:26px; }
+  #search{
+    width:100%; font-size:16px; font-family:inherit; color:var(--ink);
+    background: var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:12px 14px; outline-offset:2px;
+  }
+  #search:focus-visible{ outline: 2px solid var(--brand); }
+
+  .recents{ margin-block-end:30px; }
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    font-family:"Oswald","Arial Narrow",sans-serif; font-size:13.5px; font-weight:500;
+    letter-spacing:.02em; background: var(--surface); border:1px solid var(--border);
+    color:var(--ink); border-radius:999px; padding:8px 16px; cursor:pointer;
+  }
+  .chip:hover{ border-color: var(--brand); }
+  .chip:focus-visible{ outline: 2px solid var(--brand); outline-offset:2px; }
+
+  .team-grid{
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap:10px;
+  }
+  .team-tile{
+    display:flex; align-items:center; gap:10px; text-align:left;
+    background: var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; cursor:pointer; font-family:inherit; color:var(--ink);
+  }
+  .team-tile:hover{ border-color: var(--brand); }
+  .team-tile:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; }
+  .team-tile[hidden]{ display:none; }
+  .team-badge{
+    flex:none; width:32px; height:32px; border-radius:8px; display:flex; align-items:center;
+    justify-content:center; font-family:"Oswald","Arial Narrow",sans-serif; font-weight:600;
+    font-size:11.5px; letter-spacing:.02em;
+  }
+  .team-tile-name{ font-size:13.5px; line-height:1.2; }
+
+  .back-btn{
+    font-family:"Space Mono", Consolas, monospace; font-size:12.5px; color: var(--ink-dim);
+    background:none; border:none; padding:0 0 18px; cursor:pointer;
+  }
+  .back-btn:hover{ color: var(--brand); }
+  .back-btn:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; }
+
+  .match-card{
+    background: var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:20px; box-shadow: var(--shadow); margin-block-end:22px;
+  }
+  .match-comp{
+    font-family:"Space Mono", Consolas, monospace; font-size:11px; letter-spacing:.06em;
+    color: var(--ink-dim); text-transform:uppercase; margin-block-end:14px;
+  }
+  .score-row{
+    display:flex; align-items:center; justify-content:center; gap:16px; flex-wrap:wrap;
+    font-family:"Oswald","Arial Narrow",sans-serif; margin-block-end:6px; text-align:center;
+  }
+  .score-row .team-name{
+    font-size:16px; font-weight:500; color: var(--ink-dim); letter-spacing:.02em;
+    text-transform:uppercase;
+  }
+  .score-row .team-name.active{ color: var(--ink); font-weight:600; }
+  .score-row .score{
+    font-size:34px; font-weight:700; font-variant-numeric: tabular-nums; color:var(--ink);
+  }
+  .last-match-label{
+    text-align:center; font-size:12.5px; color: var(--ink-dim); margin-block-end:18px;
+  }
+  .perspective-toggle{
+    display:flex; gap:6px; background: var(--surface-2); border:1px solid var(--border);
+    border-radius:999px; padding:4px;
+  }
+  .seg{
+    flex:1; font-family:"Work Sans",sans-serif; font-size:12.5px; font-weight:600;
+    padding:8px 10px; border-radius:999px; border:none; background:none; color: var(--ink-dim);
+    cursor:pointer;
+  }
+  .seg.active{ background: var(--brand); color: var(--brand-ink); }
+  .seg:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; }
+
+  .comment-feed{ display:flex; flex-direction:column; gap:12px; }
+  .comment-card{
+    background: var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:16px; box-shadow: var(--shadow);
+  }
+  .comment-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-block-end:10px; }
+  .tag{
+    font-family:"Space Mono", Consolas, monospace; font-size:10.5px; letter-spacing:.06em;
+    text-transform:uppercase; border-radius:6px; padding:4px 8px; border:1px solid transparent;
+  }
+  .tag-STAT{ color: var(--stat); background: var(--stat-bg); border-color: var(--stat-border); }
+  .tag-BANTER{ color: var(--banter); background: var(--banter-bg); border-color: var(--banter-border); }
+  .tag-HOT_TAKE{ color: var(--hot); background: var(--hot-bg); border-color: var(--hot-border); }
+
+  .comment-text{ font-size:15.5px; line-height:1.5; margin:0 0 10px; }
+  .comment-bottom{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .comment-note{ font-size:12.5px; color: var(--ink-dim); font-style:italic; margin:0; flex:1; min-width:160px; }
+
+  .card-actions{ display:flex; align-items:center; gap:6px; flex:none; }
+  .thumbs{ display:flex; gap:4px; }
+  .thumb, .copy-btn{
+    display:flex; align-items:center; gap:5px; font-family:"Work Sans",sans-serif;
+    font-size:12px; font-weight:600; border-radius:8px; border:1px solid var(--border);
+    background: var(--surface-2); color: var(--ink-dim); padding:6px 9px; cursor:pointer;
+  }
+  .thumb svg, .copy-btn svg{ width:13px; height:13px; flex:none; }
+  .thumb:hover, .copy-btn:hover{ border-color: var(--brand); color: var(--ink); }
+  .thumb:focus-visible, .copy-btn:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; }
+  .thumb.up.active{ color: var(--up); border-color: var(--up); background: transparent; }
+  .thumb.down.active{ color: var(--down); border-color: var(--down); background: transparent; }
+
+  .empty-card{
+    background: var(--surface); border:1px dashed var(--border); border-radius:14px;
+    padding:32px 20px; text-align:center;
+  }
+  .empty-card h2{
+    font-family:"Oswald","Arial Narrow",sans-serif; font-weight:600; font-size:19px; margin:0 0 8px;
+  }
+  .empty-card p{ color: var(--ink-dim); font-size:14px; line-height:1.5; max-width:38ch; margin:0 auto; }
+
+  .footer{ border-top:1px solid var(--border); padding-block:16px 28px; }
+  .footer p{ font-size:11.5px; color: var(--ink-dim); margin:0; }
+
+  .toast{
+    position: fixed; left:50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-size:13px; font-weight:500; padding:9px 16px; border-radius:999px;
+    box-shadow: var(--shadow); z-index:20;
+  }
+  :root[data-theme="dark"] .toast, @media (prefers-color-scheme: dark){ }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">MB</span>
+      <div class="brand-text">
+        <span class="brand-name">Matchday Briefing</span>
+        <span class="brand-tag">Sound like you watched it</span>
+      </div>
+    </div>
+    <span class="proto-badge">Prototype · sample data</span>
+  </header>
+
+  <main id="view-home" class="view">
+    <section class="search-wrap">
+      <input id="search" type="search" placeholder="Find your team…" aria-label="Search teams">
+    </section>
+    <section class="recents">
+      <span class="section-label">Recent</span>
+      <div class="chip-row" id="recentChips"></div>
+    </section>
+    <section class="teams">
+      <span class="section-label">All clubs</span>
+      <div class="team-grid" id="teamGrid"></div>
+    </section>
+  </main>
+
+  <main id="view-team" class="view" hidden>
+    <button class="back-btn" id="backBtn">&larr; All teams</button>
+    <div id="teamContent"></div>
+  </main>
+
+  <footer class="footer">
+    <p>Match data via football-data.org, attributed here per their terms. This is a look-and-feel prototype only — all 20 clubs' fixtures, scorelines and comments shown are sample content, not live matches.</p>
+  </footer>
+</div>
+
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TEAMS = [
+    ["Arsenal","ARS"], ["Aston Villa","AVL"], ["Bournemouth","BOU"], ["Brentford","BRE"],
+    ["Brighton & Hove Albion","BHA"], ["Burnley","BUR"], ["Chelsea","CHE"], ["Crystal Palace","CRY"],
+    ["Everton","EVE"], ["Fulham","FUL"], ["Leeds United","LEE"], ["Liverpool","LIV"],
+    ["Manchester City","MCI"], ["Manchester United","MUN"], ["Newcastle United","NEW"],
+    ["Nottingham Forest","NFO"], ["Sunderland","SUN"], ["Tottenham Hotspur","TOT"],
+    ["West Ham United","WHU"], ["Wolverhampton Wanderers","WOL"]
+  ];
+  var BADGE_CLASSES = ["stat","banter","hot","brand"];
+  var RECENT_CODES = ["ARS","LIV","NEW"];
+
+  var FIXTURES = [
+    { home:"ARS", away:"TOT", homeScore:3, awayScore:1, competition:"Premier League", date:"Sat 13 Sep", venue:"Emirates Stadium" },
+    { home:"MCI", away:"MUN", homeScore:2, awayScore:2, competition:"Premier League", date:"Sun 14 Sep", venue:"Etihad Stadium" },
+    { home:"LIV", away:"EVE", homeScore:4, awayScore:0, competition:"Premier League", date:"Sat 13 Sep", venue:"Anfield" },
+    { home:"CHE", away:"FUL", homeScore:1, awayScore:1, competition:"Premier League", date:"Sat 13 Sep", venue:"Stamford Bridge" },
+    { home:"NEW", away:"SUN", homeScore:2, awayScore:1, competition:"Premier League", date:"Sat 13 Sep", venue:"St James' Park" },
+    { home:"AVL", away:"WOL", homeScore:0, awayScore:0, competition:"Premier League", date:"Sun 14 Sep", venue:"Villa Park" },
+    { home:"WHU", away:"CRY", homeScore:1, awayScore:3, competition:"Premier League", date:"Sat 13 Sep", venue:"London Stadium" },
+    { home:"BHA", away:"BRE", homeScore:2, awayScore:1, competition:"Premier League", date:"Sat 13 Sep", venue:"Amex Stadium" },
+    { home:"NFO", away:"LEE", homeScore:2, awayScore:2, competition:"Premier League", date:"Sat 13 Sep", venue:"City Ground" },
+    { home:"BOU", away:"BUR", homeScore:1, awayScore:0, competition:"Premier League", date:"Sat 13 Sep", venue:"Vitality Stadium" }
+  ];
+  var TEAM_FIXTURE = {};
+  FIXTURES.forEach(function(f){ TEAM_FIXTURE[f.home] = f; TEAM_FIXTURE[f.away] = f; });
+
+  var STAT_NOTES = ["Grounded in the final score and match data.", "Straight from the official scoreline."];
+  var BANTER_NOTES = ["General chat — not a specific claim.", "Just vibes — nothing here to fact-check.", "Terrace chat, not a stats claim."];
+  var HOT_NOTES = ["Strong take — not everyone will agree.", "A hot one — plenty would argue the opposite.", "Bold take, said with confidence, not certainty."];
+
+  var COMMENTS = {
+    ARS: [
+      { type:"STAT", text:"Arsenal never really let this one go — 2-0 up inside the first half hour and in cruise control from there. Final score 3-1.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Three different names on the scoresheet for Arsenal; Spurs' reply came from the penalty spot in the second half.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Derby day bragging rights. Doesn't matter what happens between now and Christmas, this is the one that gets brought up.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Say what you like about away days for Spurs, but this fixture in particular has a habit of going wrong at the worst time.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Quiet away end by half-time. Says it all really.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"For me, that first-half spell was as good as Arsenal have played all season — genuinely some of the best football in the league right now.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"I'll be honest, that's basic defending for the second goal. Can't be doing that against your local rivals.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Play like that first half every week and Arsenal are the best team in London, no argument.", note:HOT_NOTES[2] }
+    ],
+    TOT: [
+      { type:"STAT", text:"Spurs go in two goals down at the break and never really recover — beaten 3-1 away at Arsenal.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"The penalty was Spurs' only real moment of note all afternoon.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Nobody enjoys the trip to the Emirates on derby day, and today did nothing to change that reputation.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Credit to the away end — still singing at half-time despite the scoreline.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"One for the group chat to go quiet on for a few days, that.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"If I'm being honest, that's as flat a first half as Spurs have put in all season. Miles off the pace from the first whistle.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"The penalty gave the scoreline a bit of respectability, and fair play, the response after going 2-0 down showed some character.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"On that first-half showing alone, Arsenal look like the best team in the country right now — not just London.", note:HOT_NOTES[2] }
+    ],
+    MCI: [
+      { type:"STAT", text:"City two goals to the good inside half an hour, then United claw it back to 2-2 by the final whistle.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"United's equaliser doesn't arrive until stoppage time — City had the game shut out until then, in theory.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Derbies never stay settled for long round here, whatever the scoreline says at half-time.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Two-nil up should be job done. Nothing's simple in this fixture, never has been.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Bragging rights stay right where they were — up in the air.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"For me, conceding a two-goal lead at home is as bad as City's defending has been all season. That's not good enough.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"That opening half hour, though — some of the sharpest football City have played all campaign, derby or not.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"See that game out properly and City are miles clear as the best side in the country. That's the difference.", note:HOT_NOTES[2] }
+    ],
+    MUN: [
+      { type:"STAT", text:"United go two down inside half an hour and somehow come away with a point — 2-2 at the Etihad.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"The equaliser lands in stoppage time. Big result for United, on the road, from that position.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Digging out a point from two down away at City — that's the kind of result that gets talked about all week.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"United away days at City don't usually go like this. Today was the exception.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"That's the sort of comeback that buys a manager some breathing room, whatever else is going on.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Say what you like about United this season, but coming back from two down away at City takes real character.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Going 2-0 down inside half an hour away from home — that's as sloppy a start as United have had all season.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Find that second-half level more often and United are back in the top four conversation.", note:HOT_NOTES[2] }
+    ],
+    LIV: [
+      { type:"STAT", text:"Liverpool 2-0 up at the break, and it doesn't get any easier for Everton after that — two more in the second half. Final score 4-0.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Four different spells of play, four goals. Everton never really got a foothold.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"A derby that gets away from you early rarely gets more comfortable to watch as it goes on.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"That's the kind of scoreline that gets replayed on the walk home, over and over.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Bragging rights across the city just got a lot more one-sided for a while.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"For me, that's some of the most complete ninety minutes Liverpool have put together all season, easily.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"I'll be honest, Everton's defending for all four goals was as poor as anything they've shown this campaign.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"On that showing, Liverpool are the team to beat in this league right now. No debate.", note:HOT_NOTES[2] }
+    ],
+    EVE: [
+      { type:"STAT", text:"Everton two down at the break and it gets worse from there — beaten 4-0 at Anfield.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"No shot on target from Everton until the second half. Tells its own story.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Derby days like that are the ones you want to forget by full time.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Long week at work when the scoreline lands like that on derby day.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Travelling end had gone quiet well before the final whistle went.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"That's as bad a first half as Everton have played in this fixture in years, if I'm being honest.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Credit where it's due, though — they kept going, and it could easily have finished worse than four.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Play like that again and it's going to be a long, long season.", note:HOT_NOTES[2] }
+    ],
+    CHE: [
+      { type:"STAT", text:"Chelsea ahead since the first half, only for Fulham to nick a point late on. Finishes 1-1.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Fulham's equaliser comes deep into the second half — cancels out a lead Chelsea held for most of the game.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"West London derbies always go right to the wire, whatever the form book says beforehand.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Two points dropped feels a lot worse than a point gained when it's the neighbours.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"That's a result that gets debated at work all week rather than forgotten by Monday.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Conceding that late against your local rivals — for me, that's as soft as Chelsea's defending has looked all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"First-half performance was as sharp as Chelsea have been all campaign. Just couldn't see it out.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Hold on to that lead and people are talking about Chelsea very differently this week.", note:HOT_NOTES[2] }
+    ],
+    FUL: [
+      { type:"STAT", text:"Fulham trail for most of the game before grabbing a late leveller away at Chelsea. Finishes 1-1.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"That equaliser was pretty much Fulham's only real moment of note in the second half.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"A point at Stamford Bridge in the derby — that buys some goodwill for a couple of weeks at least.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Bragging rights stay shared for at least one more meeting.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"That's a result Fulham fans will happily bring up every time Chelsea's name comes up in conversation.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Coming back to level it away at Chelsea in the derby — that's as good a response as Fulham have shown all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"If I'm being honest, they were second best for most of that game. A bit off the pace.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Keep finding results like that and top half is well within reach this season.", note:HOT_NOTES[2] }
+    ],
+    NEW: [
+      { type:"STAT", text:"Newcastle need a goal in the closing stages to see off Sunderland — final score 2-1.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Sunderland level it in the second half before Newcastle's winner arrives right at the death.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"The Tyne-Wear derby doesn't need any extra needle. Never seems to arrive without it anyway.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Winning it that late against the local rivals — that's the kind of thing that gets talked about for months.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Bragging rights on Tyneside renewed for another few months, at least.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Finding a winner that late in a derby takes real nerve. As gutsy a finish as Newcastle have had all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"For me, letting Sunderland back into it at home was sloppy game management. Shouldn't happen.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Win derbies like that and Newcastle can go into any away day in this league full of confidence.", note:HOT_NOTES[2] }
+    ],
+    SUN: [
+      { type:"STAT", text:"Sunderland level it in the second half but concede a late winner — beaten 2-1 at St James' Park.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Over twenty minutes at 1-1 before the decisive goal finally arrives for Newcastle.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Coming that close in the derby and still leaving with nothing — that's the hardest way to lose one.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"The away end goes from bouncing to silent in the space of about ninety seconds.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"That's a defeat that stings a bit longer than a normal one, derby or not.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Fighting back to level it away in the derby — say what you like, that shows real spirit.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Conceding that late having just drawn level — that's as costly a lapse as Sunderland have had all season.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Take that fight into every away day and Sunderland aren't getting dragged into a relegation scrap.", note:HOT_NOTES[2] }
+    ],
+    AVL: [
+      { type:"STAT", text:"Villa have the better of it but neither side finds a way through — 0-0 at Villa Park.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Better chances fell to Villa, but the game finishes goalless.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"West Midlands derbies are rarely about the football, and this one leaned right into that reputation.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"A goalless derby — nobody's fully happy with that, whichever side you're on.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Not much to shout about down the pub after that one, either way.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Failing to score at home against your local rivals — for me, that's as blunt as Villa's attack has looked all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Keeping a clean sheet in a derby is nothing to turn your nose up at, even without goals to go with it.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Can't find the net in games like this and goals are going to be a problem all season.", note:HOT_NOTES[2] }
+    ],
+    WOL: [
+      { type:"STAT", text:"Wolves hold out for a point away at Villa — finishes 0-0.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"No shot on target of any real note from Wolves across the ninety minutes.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"A point away in the derby is a point away in the derby, thrilling or not.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Nobody remembers a 0-0 for long, derby or otherwise.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"At least there's nothing to be embarrassed about walking into work on Monday.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Holding firm away at Villa without conceding — that's as solid a defensive shift as Wolves have put in all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Not managing a single real chance away from home, though — that's as toothless as Wolves have looked in attack all campaign.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Defend like that all season and Wolves are nowhere near a relegation fight.", note:HOT_NOTES[2] }
+    ],
+    WHU: [
+      { type:"STAT", text:"West Ham two down at the break and never really recover — beaten 3-1 at home by Crystal Palace.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"West Ham pull one back in the second half before Palace restore the two-goal cushion late on.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"London derbies are supposed to be tight. This one got away from West Ham fast.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Not the home form you want going into a run of local fixtures.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"That's a Monday at work best avoided if you can help it.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Conceding twice before half-time at home — for me, that's as poor a start as West Ham have had all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Pulling one back showed some fight after a really difficult first half, credit there.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Keep starting games like that and it's going to be a long season at the London Stadium.", note:HOT_NOTES[2] }
+    ],
+    CRY: [
+      { type:"STAT", text:"Palace two up at the break and add a third late on to make it comfortable — 3-1 away at West Ham.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"That third goal, right at the end, puts the result well beyond doubt.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"A comfortable-looking away day in London — that's exactly the kind of result that builds confidence for the run-in.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Local bragging rights firmly in Palace's corner for now.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"That's a scoreline Palace fans will be happy to bring up for a good while yet.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"For me, that's as complete an away performance as Palace have put together all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Taking the foot off the gas after 2-0 up let West Ham back into it briefly — manager won't have been pleased with that.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Play like that on the road and Palace are a match for anyone in the top half of this league.", note:HOT_NOTES[2] }
+    ],
+    BHA: [
+      { type:"STAT", text:"Brighton need a goal right at the death to see off Brentford — final score 2-1.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Brentford level it in the second half before Brighton's winner arrives in the closing stages.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Not a derby with the history of some, but it had all the nerves of one by the end.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Winning it that late always feels better than it probably should.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Three points that'll be remembered a lot longer than the football deserved, if we're honest.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Finding a winner that late — as gutsy a finish as Brighton have had all season, for me.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Letting Brentford back level at home was loose game management. Can't be doing that.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Win games like that and Brighton are set up for another one of those surprise top-half finishes.", note:HOT_NOTES[2] }
+    ],
+    BRE: [
+      { type:"STAT", text:"Brentford level it in the second half but concede a late winner — beaten 2-1 away at Brighton.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Level for a spell before the decisive goal finally arrives in the closing stages.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Coming that close away from home and still leaving empty-handed — tough one to take, that.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"A point felt within touching distance right up until it wasn't.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"The sort of defeat that gets replayed in your head longer than it probably should.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Fighting back to level it away from home — say what you like, that shows real spirit.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Conceding again so soon after levelling — that's as costly a lapse as Brentford have had all season.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Show that fight every week and Brentford aren't anywhere near the bottom of this table.", note:HOT_NOTES[2] }
+    ],
+    NFO: [
+      { type:"STAT", text:"Forest lead twice at the City Ground, and twice Leeds pull them back. Finishes 2-2.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Leeds' second equaliser comes late, cancelling out Forest's second lead of the afternoon.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Games like that leave you more tired watching than the players look on the pitch.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Two points dropped from two separate leads — familiar kind of frustrating for a home crowd, that.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Great for the neutral. Less so if you'd already started celebrating twice.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"For me, going toe to toe like that was some of the most exciting football Forest have played all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Failing to see out two separate leads — that's as leaky as Forest's defending has looked all campaign.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Manage games out better and there's a really good side in there. The football's not the problem.", note:HOT_NOTES[2] }
+    ],
+    LEE: [
+      { type:"STAT", text:"Leeds come from behind twice to snatch a point at the City Ground — finishes 2-2.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"That second equaliser lands late, rescuing a point from Leeds' second deficit of the game.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Coming back twice away from home — says something about the character in that squad, that.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"A point that feels like a win when you're the ones doing the chasing all afternoon.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"The kind of game that's exhausting to watch, never mind play in.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Coming from behind twice away from home — as resilient as Leeds have looked all season, that.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Falling behind twice in the same match, though — that's as sloppy a start as Leeds have had this campaign.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Show that fight every week and Leeds aren't far off the play-off picture, not far at all.", note:HOT_NOTES[2] }
+    ],
+    BOU: [
+      { type:"STAT", text:"One goal in the first half is enough — Bournemouth see out a 1-0 win over Burnley.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Bournemouth hold their lead through the whole second half without much alarm.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"Not the most eventful ninety minutes, but three points are three points.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Doesn't make the highlight reel, that one, but nobody's complaining about the result.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"A tidy home win to talk about, even if there's not much else to say about it.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Seeing that out from the front — as disciplined a defensive display as Bournemouth have put in all season, for me.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"Created next to nothing after going ahead, though. Cautious is the word, all campaign really.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Defend like that every week and Bournemouth are nowhere near a relegation fight.", note:HOT_NOTES[2] }
+    ],
+    BUR: [
+      { type:"STAT", text:"Burnley undone by a single first-half goal — beaten 1-0 away at Bournemouth.", note:STAT_NOTES[0] },
+      { type:"STAT", text:"Pushed for an equaliser in the second half but couldn't find one.", note:STAT_NOTES[1] },
+      { type:"BANTER", text:"One of those away days where the effort's there but the end product just isn't.", note:BANTER_NOTES[0] },
+      { type:"BANTER", text:"Not much to take from that one beyond a long coach ride home.", note:BANTER_NOTES[1] },
+      { type:"BANTER", text:"Quiet away days like that are easy to forget by the following weekend.", note:BANTER_NOTES[2] },
+      { type:"HOT_TAKE", text:"Didn't test the keeper more than once all game, if I'm being honest — that's as blunt as Burnley's attack has looked all season.", note:HOT_NOTES[0] },
+      { type:"HOT_TAKE", text:"That pressure in the second half showed there's some fight in this squad, even without a goal to show for it.", note:HOT_NOTES[1] },
+      { type:"HOT_TAKE", text:"Turn that late pressure into goals and Burnley pick up more points than people expect this season.", note:HOT_NOTES[2] }
+    ]
+  };
+
+  var TAG_LABEL = { STAT:"Stat", BANTER:"Banter", HOT_TAKE:"Hot take" };
+  var seedCounts = {}; // comment key -> {up, down}
+  var reactionState = {}; // comment key -> 'up' | 'down' | null
+
+  function hashStr(s){
+    var h = 0;
+    for(var k=0;k<s.length;k++){ h = (h*31 + s.charCodeAt(k)) >>> 0; }
+    return h;
+  }
+  function seed(i){
+    if(!seedCounts[i]){
+      var h = hashStr(String(i));
+      seedCounts[i] = { up: 6 + (h % 19), down: (h % 5) };
+    }
+    return seedCounts[i];
+  }
+
+  var homeEl = document.getElementById("view-home");
+  var teamEl = document.getElementById("view-team");
+  var teamContent = document.getElementById("teamContent");
+  var teamGrid = document.getElementById("teamGrid");
+  var recentChips = document.getElementById("recentChips");
+  var searchInput = document.getElementById("search");
+  var toast = document.getElementById("toast");
+  var toastTimer = null;
+
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.hidden = true; }, 1400);
+  }
+
+  function badgeClassFor(code){
+    var idx = 0;
+    for(var i=0;i<TEAMS.length;i++){ if(TEAMS[i][1]===code){ idx=i; break; } }
+    return BADGE_CLASSES[idx % BADGE_CLASSES.length];
+  }
+
+  function badgeStyle(cls){
+    if(cls==="stat") return "background:var(--stat-bg);color:var(--stat);";
+    if(cls==="banter") return "background:var(--banter-bg);color:var(--banter);";
+    if(cls==="hot") return "background:var(--hot-bg);color:var(--hot);";
+    return "background:var(--brand);color:var(--brand-ink);";
+  }
+
+  function nameForCode(code){
+    for(var i=0;i<TEAMS.length;i++){ if(TEAMS[i][1]===code) return TEAMS[i][0]; }
+    return code;
+  }
+
+  function renderTeamGrid(filter){
+    teamGrid.innerHTML = "";
+    TEAMS.forEach(function(t){
+      var name = t[0], code = t[1];
+      if(filter && name.toLowerCase().indexOf(filter.toLowerCase()) === -1) return;
+      var btn = document.createElement("button");
+      btn.className = "team-tile";
+      btn.type = "button";
+      btn.innerHTML =
+        '<span class="team-badge" style="' + badgeStyle(badgeClassFor(code)) + '">' + code + '</span>' +
+        '<span class="team-tile-name">' + name + '</span>';
+      btn.addEventListener("click", function(){ openTeam(code); });
+      teamGrid.appendChild(btn);
+    });
+  }
+
+  function renderRecents(){
+    recentChips.innerHTML = "";
+    RECENT_CODES.forEach(function(code){
+      var chip = document.createElement("button");
+      chip.className = "chip";
+      chip.type = "button";
+      chip.textContent = nameForCode(code);
+      chip.addEventListener("click", function(){ openTeam(code); });
+      recentChips.appendChild(chip);
+    });
+  }
+
+  function thumbSvgUp(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22V10M2 13v7a2 2 0 0 0 2 2h13.5a2 2 0 0 0 2-1.6l1.4-7A2 2 0 0 0 19 11H14l1-5.5a1.5 1.5 0 0 0-2.6-1.2L7 10"/></svg>';
+  }
+  function thumbSvgDown(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2v12M22 11V4a2 2 0 0 0-2-2H6.5a2 2 0 0 0-2 1.6l-1.4 7A2 2 0 0 0 5 13h5l-1 5.5a1.5 1.5 0 0 0 2.6 1.2L17 14"/></svg>';
+  }
+  function copySvg(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  }
+
+  function renderCommentCard(c, i){
+    var card = document.createElement("article");
+    card.className = "comment-card";
+    var st = seed(i);
+    card.innerHTML =
+      '<div class="comment-top">' +
+        '<span class="tag tag-' + c.type + '">' + TAG_LABEL[c.type] + '</span>' +
+        '<div class="card-actions">' +
+          '<div class="thumbs">' +
+            '<button class="thumb up" data-i="' + i + '" aria-label="Mark as good">' + thumbSvgUp() + '<span class="count" data-up="' + i + '">' + st.up + '</span></button>' +
+            '<button class="thumb down" data-i="' + i + '" aria-label="Mark as bad">' + thumbSvgDown() + '<span class="count" data-down="' + i + '">' + st.down + '</span></button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<p class="comment-text">' + c.text + '</p>' +
+      '<div class="comment-bottom">' +
+        '<p class="comment-note">' + c.note + '</p>' +
+        '<button class="copy-btn" data-text="' + c.text.replace(/"/g,'&quot;') + '">' + copySvg() + 'Copy</button>' +
+      '</div>';
+
+    card.querySelector(".thumb.up").addEventListener("click", function(){ react(i, "up", card); });
+    card.querySelector(".thumb.down").addEventListener("click", function(){ react(i, "down", card); });
+    card.querySelector(".copy-btn").addEventListener("click", function(){
+      var text = c.text;
+      try{
+        navigator.clipboard.writeText(text).then(function(){ showToast("Copied to clipboard"); })
+          .catch(function(){ showToast("Couldn't copy — try selecting the text"); });
+      }catch(e){ showToast("Couldn't copy — try selecting the text"); }
+    });
+    return card;
+  }
+
+  function react(i, dir, card){
+    var st = seed(i);
+    var prev = reactionState[i] || null;
+    if(prev === dir){
+      st[dir] -= 1;
+      reactionState[i] = null;
+    } else {
+      if(prev) st[prev] -= 1;
+      st[dir] += 1;
+      reactionState[i] = dir;
+    }
+    card.querySelector('[data-up="'+i+'"]').textContent = st.up;
+    card.querySelector('[data-down="'+i+'"]').textContent = st.down;
+    var upBtn = card.querySelector(".thumb.up"), downBtn = card.querySelector(".thumb.down");
+    upBtn.classList.toggle("active", reactionState[i] === "up");
+    downBtn.classList.toggle("active", reactionState[i] === "down");
+  }
+
+  function renderMatchView(perspective){
+    var fixture = TEAM_FIXTURE[perspective];
+    var home = fixture.home, away = fixture.away;
+    var wrap = document.createElement("div");
+
+    var matchCard = document.createElement("div");
+    matchCard.className = "match-card";
+    matchCard.innerHTML =
+      '<div class="match-comp">' + fixture.competition.toUpperCase() + ' · ' + fixture.date.toUpperCase() + ' · ' + fixture.venue.toUpperCase() + '</div>' +
+      '<div class="score-row">' +
+        '<span class="team-name' + (perspective===home?' active':'') + '">' + nameForCode(home) + '</span>' +
+        '<span class="score">' + fixture.homeScore + '–' + fixture.awayScore + '</span>' +
+        '<span class="team-name' + (perspective===away?' active':'') + '">' + nameForCode(away) + '</span>' +
+      '</div>' +
+      '<div class="last-match-label">Last match · ' + fixture.date + ' — not currently live</div>' +
+      '<div class="perspective-toggle" role="tablist">' +
+        '<button class="seg' + (perspective===home?' active':'') + '" data-p="' + home + '" role="tab" aria-selected="' + (perspective===home) + '">Viewing as ' + nameForCode(home) + '</button>' +
+        '<button class="seg' + (perspective===away?' active':'') + '" data-p="' + away + '" role="tab" aria-selected="' + (perspective===away) + '">Viewing as ' + nameForCode(away) + '</button>' +
+      '</div>';
+    wrap.appendChild(matchCard);
+
+    var feed = document.createElement("div");
+    feed.className = "comment-feed";
+    COMMENTS[perspective].forEach(function(c, i){ feed.appendChild(renderCommentCard(c, perspective + "-" + i)); });
+    wrap.appendChild(feed);
+
+    matchCard.querySelectorAll(".seg").forEach(function(btn){
+      btn.addEventListener("click", function(){ openTeam(btn.getAttribute("data-p")); });
+    });
+
+    return wrap;
+  }
+
+  function renderEmptyView(code){
+    var wrap = document.createElement("div");
+    var card = document.createElement("div");
+    card.className = "empty-card";
+    card.innerHTML =
+      '<h2>No briefing yet for ' + nameForCode(code) + '</h2>' +
+      '<p>This club hasn’t got a finished match run through the prototype pipeline. In the real app, this screen shows their most recent finished match instead, clearly dated so it’s never mistaken for a live game.</p>';
+    wrap.appendChild(card);
+    return wrap;
+  }
+
+  function openTeam(code){
+    teamContent.innerHTML = "";
+    if(TEAM_FIXTURE[code]){
+      teamContent.appendChild(renderMatchView(code));
+    } else {
+      teamContent.appendChild(renderEmptyView(code));
+    }
+    if(RECENT_CODES.indexOf(code) === -1){ RECENT_CODES.unshift(code); RECENT_CODES = RECENT_CODES.slice(0,4); renderRecents(); }
+    homeEl.hidden = true;
+    teamEl.hidden = false;
+    teamEl.classList.remove("fade"); void teamEl.offsetWidth; teamEl.classList.add("fade");
+    window.scrollTo(0,0);
+  }
+
+  document.getElementById("backBtn").addEventListener("click", function(){
+    teamEl.hidden = true;
+    homeEl.hidden = false;
+    homeEl.classList.remove("fade"); void homeEl.offsetWidth; homeEl.classList.add("fade");
+    window.scrollTo(0,0);
+  });
+
+  searchInput.addEventListener("input", function(){ renderTeamGrid(searchInput.value); });
+
+  renderRecents();
+  renderTeamGrid("");
+})();
+</script>
