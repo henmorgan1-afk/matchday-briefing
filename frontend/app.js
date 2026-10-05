@@ -1,0 +1,299 @@
+// Matchday Briefing frontend (SPEC.md §4): ?team= routing, rendering and localStorage recents.
+// Reads Supabase's REST API with plain fetch and the publishable key from config.js; it never calls
+// football-data.org. Comment text and notes are model output, so they are only ever set with
+// textContent, never innerHTML.
+//
+// Thumbs buttons toggle on the page only. Writing them to `feedback` (with a deviceId) is P4.
+
+(() => {
+  'use strict';
+
+  const RECENT_KEY = 'recentTeams';
+  const RECENT_LIMIT = 5;
+  const DATA_CACHE = 'matchday-data-v1'; // the same cache sw.js falls back to offline
+  const TYPE_LABELS = { STAT: 'STAT', BANTER: 'BANTER', HOT_TAKE: 'HOT TAKE' };
+  const COMPETITION_NAMES = { PL: 'Premier League' };
+  // Fixed English labels, as in scripts/lib/match-data.js: Intl's en-GB output abbreviates September as "Sept".
+  const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const main = document.getElementById('main');
+  const toastEl = document.getElementById('toast');
+
+  // ---------------------------------------------------------------- data
+
+  async function rest(pathAndQuery) {
+    const { SUPABASE_URL, SUPABASE_ANON_KEY } = self.MATCHDAY_CONFIG;
+    const url = `${SUPABASE_URL}/rest/v1/${pathAndQuery}`;
+    // Until sw.js controls the page (a tester's very first visit), it can't see these reads, so the
+    // page saves and falls back to them itself. After that, sw.js does both.
+    const controlled = Boolean(navigator.serviceWorker && navigator.serviceWorker.controller);
+    let res;
+    try {
+      res = await fetch(url, { headers: { apikey: SUPABASE_ANON_KEY } });
+    } catch (err) {
+      const cached = controlled ? null : await fromDataCache(url);
+      if (!cached) throw err;
+      return cached.json();
+    }
+    if (!res.ok) throw new Error(`Supabase returned ${res.status} for ${pathAndQuery.split('?')[0]}`);
+    if (!controlled) saveToDataCache(url, res.clone());
+    return res.json();
+  }
+
+  async function fromDataCache(url) {
+    try {
+      return ('caches' in self) ? (await caches.match(url, { cacheName: DATA_CACHE, ignoreVary: true })) || null : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveToDataCache(url, response) {
+    if (!('caches' in self)) return;
+    caches.open(DATA_CACHE).then((cache) => cache.put(url, response)).catch(() => {});
+  }
+
+  // Every team, so a recent or linked team that has left the league still resolves; the picker
+  // shows only in_current_season rows.
+  const TEAMS_QUERY = 'teams?select=id,short_name,slug,in_current_season&order=short_name.asc,id.asc';
+
+  // The team's most recent finished match that has live comments for its perspective (or, with
+  // matchId, that one match), with those comments as `own`. !inner drops matches with none.
+  // `opponent` holds at most one live comment from the other side, which is all the opposition link
+  // needs to know. Both embeds are aliased: PostgREST only applies the filters reliably that way.
+  // Comments of one attempt share created_at, so they're ordered by type, descending from the enum
+  // order (HOT_TAKE, BANTER, STAT), then created_at, then id.
+  function briefingQuery(teamId, matchId) {
+    const id = encodeURIComponent(teamId);
+    return 'matches?select=id,competition,matchday,kickoff_at,home_team_id,away_team_id,'
+      + 'home_score,away_score,home_ht_score,away_ht_score,own:comments!inner(id,type,text,note),opponent:comments(id)'
+      + `&status=eq.finished&or=(home_team_id.eq.${id},away_team_id.eq.${id})`
+      + (matchId ? `&id=eq.${encodeURIComponent(matchId)}` : '')
+      + `&own.perspective_team_id=eq.${id}&own.superseded_at=is.null`
+      + '&own.order=type.desc,created_at.asc,id.asc'
+      + `&opponent.perspective_team_id=neq.${id}&opponent.superseded_at=is.null&opponent.limit=1`
+      + '&order=kickoff_at.desc,id.desc&limit=1';
+  }
+
+  // ---------------------------------------------------------------- recents
+
+  function readRecents() {
+    try {
+      const value = JSON.parse(localStorage.getItem(RECENT_KEY));
+      return Array.isArray(value) ? value.filter((slug) => typeof slug === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function addRecent(slug) {
+    const next = [slug, ...readRecents().filter((s) => s !== slug)].slice(0, RECENT_LIMIT);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch {
+      // Storage can be full or blocked; recents are a convenience, so carry on without them.
+    }
+  }
+
+  // ---------------------------------------------------------------- helpers
+
+  // Builds an element. `text` is set with textContent; every other prop is an attribute,
+  // a dataset entry or an on<event> listener.
+  function el(tag, props = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (value == null || value === false) continue;
+      if (key === 'text') node.textContent = value;
+      else if (key === 'class') node.className = value;
+      else if (key === 'dataset') Object.assign(node.dataset, value);
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? '' : value);
+    }
+    node.append(...children.flat().filter(Boolean));
+    return node;
+  }
+
+  function teamHref(slug) {
+    return `?team=${encodeURIComponent(slug)}`;
+  }
+
+  function londonDate(iso) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/London', year: 'numeric', month: 'numeric', day: 'numeric',
+    }).formatToParts(new Date(iso));
+    const get = (type) => Number(parts.find((p) => p.type === type).value);
+    return { year: get('year'), month: get('month'), day: get('day') };
+  }
+
+  // "Sat 20 Sep", plus the year when it isn't this year (e.g. during the close season).
+  function dateLabel(iso) {
+    const { year, month, day } = londonDate(iso);
+    const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+    const thisYear = londonDate(new Date().toISOString()).year;
+    return `${weekday} ${day} ${MONTHS[month - 1]}${year === thisYear ? '' : ` ${year}`}`;
+  }
+
+  let toastTimer;
+  function toast(message) {
+    toastEl.textContent = message;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2200);
+  }
+
+  async function copyLine(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Copied');
+    } catch {
+      toast("Couldn't copy. Select the line and copy it instead.");
+    }
+  }
+
+  function render(state, title, nodes) {
+    document.title = title ? `${title} · Matchday Briefing` : 'Matchday Briefing';
+    main.replaceChildren(...nodes.filter(Boolean));
+    document.body.dataset.state = state;
+  }
+
+  function offlineNotice() {
+    return navigator.onLine ? null : el('p', { class: 'notice notice--offline', text: "You're offline. This is the last version saved on this device." });
+  }
+
+  // ---------------------------------------------------------------- views
+
+  function teamList(teams, label) {
+    return el('ul', { class: 'team-list', 'aria-label': label },
+      teams.map((team) => el('li', {}, el('a', { class: 'team-link', href: teamHref(team.slug), dataset: { slug: team.slug }, text: team.short_name }))));
+  }
+
+  function renderHome(teams, unknownSlug) {
+    const bySlug = new Map(teams.map((t) => [t.slug, t]));
+    const recents = readRecents().map((slug) => bySlug.get(slug)).filter(Boolean);
+    const current = teams.filter((t) => t.in_current_season);
+
+    render(unknownSlug ? 'unknown-team' : 'home', null, [
+      unknownSlug && el('p', { class: 'notice notice--unknown', role: 'alert', text: "We don't know that team" }),
+      offlineNotice(),
+      el('p', { class: 'intro', text: 'Pick a team for a few lines to say about their last match: the score, a bit of chat and some strong opinions.' }),
+      recents.length > 0 && el('section', { class: 'picker picker--recent', 'aria-labelledby': 'recent-heading' },
+        el('h2', { id: 'recent-heading', text: 'Recent' }),
+        teamList(recents, 'Recent teams')),
+      el('section', { class: 'picker', id: 'picker', 'aria-labelledby': 'picker-heading' },
+        el('h2', { id: 'picker-heading', text: 'Premier League teams' }),
+        current.length > 0
+          ? teamList(current, 'Premier League teams')
+          : el('p', { class: 'status', text: 'No teams yet. Check back soon.' })),
+    ]);
+  }
+
+  // pinned: the page was opened for this match via ?match= (an opposition link), so it may not be
+  // the team's latest; the date label says "Match:" rather than "Last match:".
+  function renderTeam(team, match, teamsById, pinned) {
+    const backLink = el('a', { class: 'back-link', href: './', text: '← All teams' });
+    const heading = el('h1', { class: 'team-name', text: team.short_name });
+
+    if (!match) {
+      render('no-briefing', team.short_name, [
+        backLink, heading, offlineNotice(),
+        el('p', { class: 'empty', text: `No briefing yet for ${team.short_name} — check back after their next match` }),
+      ]);
+      return;
+    }
+
+    const name = (id) => (teamsById.get(id) || { short_name: 'Unknown team' }).short_name;
+    const meta = [
+      match.home_ht_score != null && match.away_ht_score != null && `Half time ${match.home_ht_score}–${match.away_ht_score}`,
+      match.matchday != null && `Matchday ${match.matchday}`,
+      COMPETITION_NAMES[match.competition] || match.competition,
+    ].filter(Boolean).join(' · ');
+
+    const matchCard = el('section', { class: 'match', 'aria-label': 'Match' },
+      el('p', { class: 'match__label', text: `${pinned ? 'Match' : 'Last match'}: ${dateLabel(match.kickoff_at)}` }),
+      el('p', { class: 'match__score' },
+        el('span', { class: 'match__team', text: name(match.home_team_id) }),
+        el('span', { class: 'match__goals', text: `${match.home_score}–${match.away_score}` }),
+        el('span', { class: 'match__team match__team--away', text: name(match.away_team_id) })),
+      el('p', { class: 'match__meta', text: meta }));
+
+    // Only when the other side has live comments for this same match.
+    const opponent = teamsById.get(match.home_team_id === team.id ? match.away_team_id : match.home_team_id);
+    const opponentLink = opponent && match.opponent.length > 0 && el('a', {
+      class: 'opponent-link',
+      href: `${teamHref(opponent.slug)}&match=${encodeURIComponent(match.id)}`,
+      text: `See what ${opponent.short_name} fans are saying →`,
+    });
+
+    render('team', team.short_name, [
+      backLink, heading, offlineNotice(), matchCard, opponentLink,
+      el('ol', { class: 'cards', 'aria-label': 'Talking points' }, match.own.map(commentCard)),
+    ]);
+  }
+
+  function commentCard(comment) {
+    const label = TYPE_LABELS[comment.type] || comment.type;
+    const typeClass = `tag--${String(comment.type).toLowerCase().replace(/[^a-z]+/g, '-')}`;
+
+    const thumbs = ['up', 'down'].map((reaction) => el('button', {
+      type: 'button',
+      class: `thumb thumb--${reaction}`,
+      'aria-label': reaction === 'up' ? 'Thumbs up' : 'Thumbs down',
+      'aria-pressed': 'false',
+      dataset: { reaction },
+      text: reaction === 'up' ? '👍' : '👎',
+    }));
+    for (const button of thumbs) {
+      button.addEventListener('click', () => {
+        const pressed = button.getAttribute('aria-pressed') !== 'true';
+        for (const b of thumbs) b.setAttribute('aria-pressed', String(b === button && pressed));
+      });
+    }
+
+    return el('li', { class: 'card', dataset: { commentId: comment.id, type: comment.type } },
+      el('span', { class: `tag ${typeClass}`, text: label }),
+      el('p', { class: 'card__text', text: comment.text }),
+      el('p', { class: 'card__note', text: comment.note }),
+      el('div', { class: 'card__actions' },
+        el('button', { type: 'button', class: 'copy', onclick: () => copyLine(comment.text), text: 'Copy' }),
+        el('span', { class: 'thumbs', role: 'group', 'aria-label': 'Rate this line' }, thumbs)));
+  }
+
+  function renderError() {
+    render('error', null, [
+      el('p', { class: 'notice notice--error', role: 'alert', text: "Couldn't load this page. Check your connection and try again." }),
+      el('button', { type: 'button', class: 'retry', onclick: start, text: 'Try again' }),
+    ]);
+  }
+
+  // ---------------------------------------------------------------- routing
+
+  async function start() {
+    render('loading', null, [el('p', { class: 'status', text: 'Loading…' })]);
+    const params = new URLSearchParams(location.search);
+    const slug = params.get('team');
+    // ?match= pins the view to one match (opposition links use it). An id that isn't a number, or
+    // isn't a finished match of this team with live comments for it, falls back to the latest briefing.
+    const matchParam = params.get('match');
+    const matchId = matchParam && /^\d{1,12}$/.test(matchParam) ? matchParam : null;
+    try {
+      if (!self.MATCHDAY_CONFIG) throw new Error('config.js did not load');
+      const teams = await rest(TEAMS_QUERY);
+      const team = slug ? teams.find((t) => t.slug === slug) : null;
+      if (!team) {
+        renderHome(teams, slug || null);
+        return;
+      }
+      // Opening a team through an opposition link (any URL with ?match=) leaves Recent alone.
+      if (!params.has('match')) addRecent(team.slug);
+      const [pinned] = matchId ? await rest(briefingQuery(team.id, matchId)) : [];
+      const [match] = pinned ? [pinned] : await rest(briefingQuery(team.id));
+      renderTeam(team, match || null, new Map(teams.map((t) => [t.id, t])), Boolean(pinned));
+    } catch (err) {
+      console.error('Matchday Briefing:', err);
+      renderError();
+    }
+  }
+
+  start();
+})();

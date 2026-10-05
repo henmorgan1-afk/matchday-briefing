@@ -77,7 +77,10 @@ it could apply to literally any match (that's the AI-generic failure
 mode this voice reference exists to prevent).
 
 For each comment, also write a one-sentence "note":
-- STAT: name the data field it's grounded in.
+- STAT: say in plain English what it's based on, for someone who doesn't
+  follow football ("From the final score", "From the half-time and final
+  scores"). Never use the match data's field names, such as total_goals
+  or full_time.
 - BANTER: say plainly it's general chat, not a specific claim.
 - HOT_TAKE: flag it as a strong take other fans might disagree with.
 

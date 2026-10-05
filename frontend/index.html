@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Matchday Briefing</title>
+  <meta name="description" content="Short talking points about your Premier League team's last match.">
+  <meta name="theme-color" content="#1F5C39">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="Matchday">
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-state="loading">
+  <header class="masthead">
+    <a class="masthead__title" href="./">Matchday Briefing</a>
+  </header>
+
+  <main id="main" class="page" aria-live="polite">
+    <p class="status">Loading…</p>
+  </main>
+
+  <footer class="footer">
+    <p>Match data via <a href="https://www.football-data.org/">football-data.org</a></p>
+    <p>On iPhone: Share → Add to Home Screen</p>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker not registered:', err));
+      });
+    }
+  </script>
+</body>
+</html>
