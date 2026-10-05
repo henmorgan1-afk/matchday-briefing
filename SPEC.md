@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built on branch `p1-generation-pipeline`, with its prompts tightened in three review rounds (Revisions 5–7), not yet merged to `main`. Under Revision 7, `check-p1.js` passes on all four finished matchday-5 matches. P2–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4–5 Oct 2026 during the P0 and P1 builds (see Revisions 3–7 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0).
 
 ## How this document is used
 
@@ -216,6 +216,98 @@ Implementation notes, within those decisions:
 - **Checker output missed the target.** Per check: mean 296 tokens, median 261, range 136–945, with 20 of 64 checks over 300. That's down from about 720, but not well under 300. The JSON reply itself is short. Most of the rest is adaptive thinking, which the reply format doesn't control.
 - **Cost and time.** Each dry run used about 29.8k input and 6.4–7.2k output tokens. That's about US$0.13 per match, or roughly $49 for a 380-match season before retries. Each dry run took 36–47 s.
 
+### Revision 8 (5 Oct 2026, P2 build)
+
+Decisions made while building P2. They include four changes the project owner asked for after reviewing the first build:
+- the card order (item 6);
+- `include-hidden-files` (items 9 and 11);
+- the opposition link and `?match=` (item 12);
+- plain-English `STAT` notes (item 13).
+
+§2.1, §3.3, §3.4, §4 and §10 are updated for those. Where anything else in §1, §4, §7 or §9 differs, this note takes precedence.
+
+1. **Thumbs stay on the page until P4.** §4 says a thumbs tap writes to `feedback`, but §7 puts thumbs writes in P4, and P2 was built without starting P4. Each card has thumbs up and down buttons that toggle a pressed state (`aria-pressed`) on the page only. There is no `feedback` write, no `deviceId` and no "You're offline — reaction not saved" toast yet. P4 adds all three to `app.js`.
+2. **P2 reads Supabase live.** §7 lists "wire frontend to live Supabase reads" under P3. But §4's picker and briefings, and `check-p2`, need live reads, so P2 does them. That leaves P3 with what `check-p3.js` asserts: identical comments across browsers, and pipeline idempotency. `check-p3.js` and `verify.js` are not built.
+3. **Palette and manifest.**
+   - The manifest's `theme_color` `#1F5C39` and `background_color` `#F4EFE3` are also the site's two palette tokens (`--colour-pitch` and `--colour-paper` in `style.css`). Every other colour is mixed from them.
+   - There's no dark mode, because it would need a second palette that the manifest's colours wouldn't match.
+   - `id`, `start_url` and `scope` are `/`. The three icons in `frontend/icons/` are used unchanged, with the maskable one marked `purpose: maskable`.
+   - Chrome reports no manifest or installability errors.
+4. **`config.js`** sets `self.MATCHDAY_CONFIG = { SUPABASE_URL, SUPABASE_ANON_KEY }`, copied once from `.env`. The key is the `sb_publishable_` key. No other `.env` value appears under `frontend/`.
+5. **Supabase reads.** `app.js` sends the publishable key in the `apikey` header only, with no `Authorization` header. A team view makes two reads, or three when a `?match=` id doesn't resolve (item 12):
+   - every `teams` row, so a recent or linked team that has left the league still resolves (the picker shows only `in_current_season` rows);
+   - one `matches` read with two aliased embeds of `comments`:
+     - `own:comments!inner(...)`, filtered to that team's perspective and `superseded_at is null`;
+     - `opponent:comments(id)`, filtered to the other perspective and `superseded_at is null`, with limit 1. It exists only to decide whether to show the opposition link.
+
+     The read is ordered by `kickoff_at` descending, with limit 1, and with `&id=eq.<match>` added when the view is pinned to a match. Both embeds must be aliased: with one plain `comments` embed and one aliased, PostgREST didn't apply the plain embed's filters.
+6. **Comment order** (the project owner's choice): HOT TAKE cards at the top, then BANTER, then STAT at the bottom. That is `type` descending from the enum order. Rows from one attempt share `created_at`, so within a type the order is `created_at`, then `id`. The order is therefore deterministic, which `check-p3`'s "same order" assertion needs.
+7. **Smaller choices.**
+   - `recentTeams` holds up to 5 slugs.
+   - The date label reads "Last match: Sat 20 Sep". It uses Europe/London time and the same fixed month abbreviations as `match-data.js`, and adds the year only when it isn't the current year. On a view pinned with `?match=` it reads "Match: Sat 20 Sep" instead, because that match may not be the team's latest.
+   - The match card shows both teams' `short_name` and the full-time score, plus the half-time score, matchday and competition.
+   - Copy copies the line's `text`, not its note.
+   - A failed read with nothing cached shows an error message and a "Try again" button (`body[data-state="error"]`). `check-p2` counts that state as a failure.
+   - An empty `?team=` shows the homepage.
+   - The footer holds only the attribution and the iPhone line. The external feedback-form link is P4.
+8. **Service worker.**
+   - `pages.yml` stamps `CACHE_VERSION` with the first 12 characters of the commit SHA at deploy time, so nobody has to remember to bump it. The committed value is `'dev'`. The deploy fails if the line isn't found.
+   - The app shell (`index.html`, `config.js`, `app.js`, `style.css`, the manifest and the icons) is precached with `cache: 'reload'` and served cache-first. Every navigation gets the cached `index.html`.
+   - A new worker calls `skipWaiting` and `clients.claim`, and deletes old shell caches when it activates. So a deploy reaches a tester on the first page load after their browser fetches the new `sw.js`.
+   - Supabase reads (`GET` under `/rest/v1/`) are network-first, cached in `matchday-data-v1`. That cache isn't versioned, so it survives shell updates.
+   - On a tester's first visit, the worker doesn't control the page yet. `app.js` therefore saves its reads to the same cache itself, and falls back to it. Without that, a tester who opened a link once and then went offline would have nothing cached.
+   - When `navigator.onLine` is false, the page shows "You're offline. This is the last version saved on this device." above the briefing.
+9. **`pages.yml`** uses the current major version of each action: `actions/checkout@v7`, `actions/configure-pages@v6`, `actions/upload-pages-artifact@v5` and `actions/deploy-pages@v5`. It runs on pushes to `main` that touch `frontend/**` or the workflow file, and has a manual trigger for the first deploy. Before the first run, set Settings → Pages → Source to "GitHub Actions". The upload step sets `include-hidden-files: true`, because `upload-pages-artifact` v4 and later otherwise leave out dotfiles, and §10's `frontend/.well-known/` must be published.
+10. **`check-p2.js`.**
+    - `--base <url>` runs it against another copy, such as a local server. The live-domain checks run only against the live domain, and the result says when they were skipped. They are: HTTPS returns 200, and `http://`, `https://www.` and `http://www.` all redirect to the bare domain.
+    - It reads Supabase with the publishable key only, so it sees what the frontend sees.
+    - It goes beyond §9 in these ways:
+      - A team page must show exactly the live comments of that team's latest briefing, which the check works out independently from `comments` and `matches`. A team that has a briefing but shows "No briefing yet" fails.
+      - Every card must have a type tag, text, a note, a copy button and thumbs, and the cards must be in HOT_TAKE, BANTER, STAT order. The match card must have a "Last match:" label.
+      - Each team page must have the opposition link exactly when the opponent has live comments for that match. The link must point at `?team=<opponent slug>&match=<match id>` and name the opponent.
+      - In a fresh browser, the check follows one opposition link. The page it lands on must show exactly the opponent's live comments for that match, with a "Match:" label and a link back. Following it must leave Recent as it was.
+      - `?match=` values of `not-a-number`, `999999999`, `-1`, and another team's match must all fall back to the team's latest briefing. A team with no briefing given a real match id must still show "No briefing yet". None of these pages may add to Recent.
+      - With today's data, no team has played since its briefing match. So the case where a pinned match differs from the team's latest can't be exercised yet.
+      - `sw.js` must activate. Copy must put the line on the clipboard, and the thumbs must toggle.
+      - A fresh browser that opened a team link once must show the same cards after reloading with the network off. The check first confirms that an uncached read fails while offline, so it is really testing the cache.
+      - The secrets check covers every `.env` value except `SUPABASE_URL` and `SUPABASE_ANON_KEY`, not only the three in §9. It checks the local `frontend/` files as well as the served ones.
+    - `package.json` gains `playwright` as a devDependency and a `check:p2` script. `playwright` has no install script, so `pipeline.yml`'s `npm ci` downloads no browsers.
+11. **Dotfiles for §10 step 2.** `upload-pages-artifact` v4 and later leave out dotfiles unless `include-hidden-files: true` is set. That input is now set in `pages.yml` (item 9), and §10's note says so.
+12. **Opposition link and `?match=`** (the project owner's decision; §2.1 and §4 are updated to match).
+    - A team's briefing shows a link such as "See what Sunderland fans are saying →" under the match card. It goes to `?team=<opponent slug>&match=<match id>`, so it still opens that same match if the opponent has played since.
+    - The link appears only when the opponent has live comments for that match.
+    - The page it opens has its own link back, by the same rule.
+    - A `?match=` value is used only if it is 1–12 digits and is a finished match of that team with live comments for that team's perspective. Anything else, such as a non-number, an unknown id, or another team's match, falls back to the team's normal latest briefing. That shows "Last match:", or "No briefing yet" when there's no briefing.
+    - **Recent.** Any page opened with a `match` parameter leaves `recentTeams` alone, whether the id is usable or not. That covers following an opposition link. A tester's own team gets into Recent from the picker or a plain `?team=` link.
+13. **Plain-English `STAT` notes** (the project owner's decision). The generation prompt now says a `STAT` note must say in plain English what it's based on, for someone who doesn't follow football ("From the final score", "From the half-time and final scores"). It must never use the match data's field names, such as `total_goals` or `full_time`. §3.3 and §3.4 are updated to match, and `prompts/generation-prompt.md` is still byte-for-byte the §3.4 block.
+    - `PROMPT_VERSION` is now `b84cf413`. It was `06791d62` in Revision 7.
+    - Stored comments are unchanged. They keep their old notes and their old `prompt_version` until a score correction regenerates them.
+    - The Revision 7 dry run for 560590 is kept as `review/dryrun-560590-v4.json`.
+
+**P2 findings.**
+- Step 1 was `node scripts/run-pipeline.js` with no arguments, run on 5 Oct, and it made 0 generation calls. The hourly job on `main` had already generated all four finished matchday-5 matches. Live comments per perspective (home/away) are:
+  - 560582: 8/8
+  - 560583: 8/8
+  - 560585: 7/8
+  - 560590: 8/7
+
+  So 8 of the 20 current-season teams have a briefing. The other 12 show "No briefing yet" until matchday 6 (10–12 Oct).
+- `check-p2.js --base http://localhost:8080` passes. It covers 20 picker entries, 20 team pages, the unknown slug, the manifest, `sw.js`, secrets and offline. All 8 briefings have an opposition link. The followed link shows Liverpool's 8 lines for 560582. All four `?match=` fallbacks work, and Recent is unchanged throughout.
+- Deliberately broken copies fail as they should:
+  - the first build's check failed with 12 problems;
+  - after items 6 and 12:
+    - a copy with the old card order and the link hidden failed with 17 problems;
+    - a copy that adds `?match=` pages to Recent failed with 2.
+- While item 12 was being built, the check caught a real bug: the `?match=` id test had lost its backslash (`/^d{1,12}$/`), so every pinned view fell back.
+- The live-domain part can't run until the site is deployed on the domain.
+- Two things in the stored comments:
+  - Some `STAT` notes contain raw field names, which testers will see ("Grounded in total_goals and full_time score"). Item 13 fixes this for new generation only. The stored rows keep these notes.
+  - One passing Man City `HOT_TAKE` says "backs against the wall stuff even while we were ahead". That is close to the goal-order rule's banned "while we were already up". It's left for P5.
+- **Item 13 dry run** (560590, one run, 5 Oct 2026):
+  - `check-p1.js` passes, with Man City 7/8 and Sunderland 8/8. Nothing was written to Supabase.
+  - All four `STAT` notes read plainly, for example "From the half-time and final scores" and "From the final score and the match result". No note of any type contains a field name; the previous run's notes had two.
+  - The run made 2 generation and 16 safety-check calls, using 29.9k input and 6.9k output tokens, about US$0.13.
+
 ## 1. Architecture
 
 ```
@@ -372,6 +464,9 @@ Slugs are the `?team=` value in every tester link, so they must be predictable a
 - If the result is already taken by a different team id, append `-` plus the lower-cased `tla`.
 - A slug is assigned only when the team's row is first inserted and is never changed afterwards, even if the API later changes the short name. Links already shared keep working.
 - The frontend resolves `?team=<slug>` by looking the slug up in `teams`. An unknown slug shows "We don't know that team" above the normal team picker, never a blank page.
+- An optional `&match=<football-data.org match id>` pins the team view to that match, for example `?team=sunderland&match=560590`. Opposition links use it (§4), so they keep showing the same match after the team has played again.
+  - The id is used only if it is a finished match of that team with live comments for its perspective. Anything else falls back to the team's latest briefing.
+  - A page opened with a `match` parameter never adds the team to Recent.
 
 ### 2.2 Match status mapping (`STATUS_MAP` in `scripts/lib/constants.js`)
 
@@ -426,7 +521,7 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
   - **No time words tied to when the line is read.** People read a briefing days after the match, so no "today", "tonight", "yesterday", "last night", "this weekend" or "this morning".
   - **No contradicting the match data**, even in an opinion. A line calling a first half poor when the team led 2-0 at the break fails.
   - **Code gate.** After the model checker, deterministic code drops any line that breaks a number rule (`STAT` and `HOT_TAKE` numbers must be in the match data; `BANTER` has none) or contains a banned term. These are the rules `check-p1.js` asserts (§3.1 step 4, §9).
-- **`STAT`** — every specific claim must trace to a field in the match data JSON (§3.5): the final score, the half-time score if present, the result, points, clean sheet, home/away, matchday or kickoff date. Checker fails it if any claim isn't in the data, even if the claim might be true (a scorer's name, a league position). Number words count as numbers and must match the data too. `note` names what grounds it, e.g. "From the official final score."
+- **`STAT`** — every specific claim must trace to a field in the match data JSON (§3.5): the final score, the half-time score if present, the result, points, clean sheet, home/away, matchday or kickoff date. Checker fails it if any claim isn't in the data, even if the claim might be true (a scorer's name, a league position). Number words count as numbers and must match the data too. `note` says in plain English what grounds it, for someone who doesn't follow football, e.g. "From the final score" or "From the half-time and final scores". It never uses the match data's field names, such as `total_goals` or `full_time`.
 - **`HOT_TAKE`** — a strong, explicitly-opinion-framed take about how a **team** played, as a whole.
   - Any number, in digits or words, must match the match data.
   - Positive/enthusiastic: unrestricted, however strong.
@@ -524,7 +619,10 @@ it could apply to literally any match (that's the AI-generic failure
 mode this voice reference exists to prevent).
 
 For each comment, also write a one-sentence "note":
-- STAT: name the data field it's grounded in.
+- STAT: say in plain English what it's based on, for someone who doesn't
+  follow football ("From the final score", "From the half-time and final
+  scores"). Never use the match data's field names, such as total_goals
+  or full_time.
 - BANTER: say plainly it's general chat, not a specific claim.
 - HOT_TAKE: flag it as a strong take other fans might disagree with.
 
@@ -653,6 +751,11 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 
 - **`frontend/index.html` (homepage):** a text list of the current Premier League teams (read at page load from the Supabase `teams` table where `in_current_season` is true, sorted by `short_name`; never hardcoded and never fetched from football-data.org) as the picker, plus a "Recent" list read from `localStorage` (`recentTeams`, an array of slugs, most-recent-first, capped at a handful). Picking a team, or loading a `?team=` link directly, adds that team to `recentTeams` and navigates to the team view.
 - **Team view:** loads that team's most recent `finished` match that has live comments (`superseded_at` null) for that team's perspective, from Supabase. If the team's true next fixture hasn't been played yet or is in progress, this is still their most recent *finished* match — shown with an explicit date label (e.g. "Last match: Sat 13 Sep") so it's never mistaken for a live game. Team names on the match card come from `teams.short_name`.
+  - **Card order:** HOT TAKE cards at the top, then BANTER, then STAT at the bottom.
+  - **Opposition link.** Under the match card, a link such as "See what Sunderland fans are saying" opens the opponent's lines for the same match: `?team=<opponent slug>&match=<match id>` (§2.1).
+    - It's shown only when the opponent has live comments for that match.
+    - Opening a team through it doesn't add that team to Recent.
+    - A view pinned with `match` labels its date "Match: Sat 13 Sep", because it may not be the team's latest. An unknown or unusable `match` id falls back to the team's normal latest briefing.
   - **No briefing yet** (for example at the very start of the season, or before the pipeline's first run): show "No briefing yet for <team> — check back after their next match" instead of a blank page.
   - **Unknown `?team=` slug:** show "We don't know that team" above the normal picker (§2.1).
 - **Comment card:** comment `text`, a visible type tag (`STAT` / `BANTER` / `HOT TAKE`), the `note`, a copy-to-clipboard button, and thumbs up/down. A thumbs click writes a row to `feedback` tagged with a `deviceId` (a UUID generated once and cached in `localStorage`, no accounts).
@@ -763,7 +866,7 @@ The backend (pipeline, Supabase, prompts) is the same at every step below. Only 
 | **4. Full native rewrite** | React Native, Flutter, or Kotlin/Swift | Capacitor has been tried and can't deliver a required feature or performance level | A full frontend rewrite | Backend only |
 
 Notes that apply before each step:
-- **Before step 2:** the Play Store wrap proves the app owns the site with a Digital Asset Links file at `https://didyouseethatludicrousdisplaylastnight.co.uk/.well-known/assetlinks.json`, so it goes in `frontend/.well-known/`. The Actions deploy doesn't run Jekyll, so the dot-folder is published as-is. Also check Google Play's current policy on showing web ads inside a Trusted Web Activity before V1 turns ads on. Don't assume it's allowed. Also re-check the football-data.org commercial-use term (§1) at the same time, since a store listing plus ads is clearly commercial use.
+- **Before step 2:** the Play Store wrap proves the app owns the site with a Digital Asset Links file at `https://didyouseethatludicrousdisplaylastnight.co.uk/.well-known/assetlinks.json`, so it goes in `frontend/.well-known/`. The Actions deploy doesn't run Jekyll. `upload-pages-artifact` v4 and later leave out dotfiles by default, so `pages.yml` sets `include-hidden-files: true` on the upload step, and the dot-folder is published as-is (Revision 8). Also check Google Play's current policy on showing web ads inside a Trusted Web Activity before V1 turns ads on. Don't assume it's allowed. Also re-check the football-data.org commercial-use term (§1) at the same time, since a store listing plus ads is clearly commercial use.
 - **Before step 3:** web push (possible from step 1 onward) may cover the "your briefing is ready" notification on Android well enough that step 3 isn't needed for push alone. Test that before choosing Capacitor for push.
 - The ~30% install threshold is a starting default, not a researched figure. Change it here if P4 suggests a better bar.
 - A gate being met doesn't commit you to the step. It's the earliest point the step is worth considering, and taking it is still recorded here first, per "How this document is used".
