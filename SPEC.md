@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built on branch `p1-generation-pipeline`, with its prompts tightened in two review rounds (Revisions 5 and 6), not yet merged to `main`. Under the Revision 6 prompts, `check-p1.js` passes on 3 of the 4 finished matchday-5 matches; 560583 fails (see Revision 6). P2–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4–5 Oct 2026 during the P0 and P1 builds (see Revisions 3–6 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built on branch `p1-generation-pipeline`, with its prompts tightened in three review rounds (Revisions 5–7), not yet merged to `main`. Under Revision 7, `check-p1.js` passes on all four finished matchday-5 matches. P2–P5 not started. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), and again on 4–5 Oct 2026 during the P0 and P1 builds (see Revisions 3–7 in §0).
 
 ## How this document is used
 
@@ -180,6 +180,41 @@ Implementation notes, within those decisions:
   - `BANTER` that implies what happened on the pitch through "feel" wording ("get through it with a bit of pride intact", "never as straightforward as people think on paper");
   - "one apiece", a score form that `check-p1.js` doesn't count. It was correct here.
 - **Cost and time.** Each dry run used about 28.8k input and 13.3k output tokens. Output was 3.3–5.1k before, so the per-rule list is about five times the checker's previous output. That's about US$0.19 per match, or roughly $72 for a 380-match season before retries. Each dry run took 50–54 s.
+
+### Revision 7 (5 Oct 2026, last prompt round before merging)
+
+The project owner read the Revision 6 dry runs and made these decisions. §3.1, §3.3, §3.4, §9 and `prompts/*.md` are updated to match. Where anything earlier in this document differs, this note takes precedence.
+
+1. **Code gate in the pipeline.** `check-p1.js`'s deterministic checks move into shared code, `scripts/lib/code-gate.js`: the number rules for `STAT`, `HOT_TAKE` and `BANTER`, and the banned terms. The pipeline runs them after the model safety check. A line that fails is dropped and logged exactly like a checker fail. `check-p1.js` uses the same code.
+2. **Banned terms:** "big six", "back in", "last week" and "recently" are added.
+3. **"one apiece"** counts as a score form.
+4. **Checker cost.**
+   - Each rule still gets its own entry, and every type-specific clause is now an entry of its own, so a `HOT_TAKE`'s number clause is always checked.
+   - Each entry is just "pass" or "fail", with a short reason only for rules that fail.
+   - The target is well under 300 output tokens per check.
+5. **`BANTER` "feel" wording is a deliberate choice.** `BANTER` worded as how a fixture or its fans feel ("pride intact", "never as straightforward as people think") is acceptable. The prompts don't change.
+6. **Review files.** The Revision 6 dry runs are kept as `review/dryrun-<match id>-v3.json`.
+
+Implementation notes, within those decisions:
+- **Rule IDs.** The checker prompt labels the every-type rules E1–E7, and each type's clauses separately:
+  - `STAT`: S1 (claims are in the data) and S2 (numbers);
+  - `HOT_TAKE`: H1 (numbers) and H2 (effort, honesty, off the pitch);
+  - `BANTER`: B1 (numbers), B2 (dates and named incidents) and B3 (what happened on the pitch in past meetings).
+
+  It replies with `{"rules": {"E1": "pass", …, "H1": "fail: <reason>"}, "result": …, "reason": …}`. The pipeline reads that map, and still reads Revision 6's list form. A rule marked "fail" still fails the comment, whatever the overall result says.
+- **The new gate terms are in both prompts too**: "the big six" under the league/form rule, and "last week", "recently" and "back in September" under the time-word rule. Without them, the generator would write lines that get checked, and paid for, only for the gate to drop them.
+- **"back in" matches only as whole words**, so "back into" and "back inside" don't trip it. Every other term keeps the start-of-word, any-ending rule, so "last week" also catches "last weekend".
+- **The gate runs only on lines the model checker passed**, as decided.
+- **Review fields.** Dry-run output marks each failed candidate with `failed_by` (`format`, `checker` or `code_gate`) and records each check's output tokens (`check_output_tokens`). Neither is stored.
+- **`check-p1.js` no longer has its own copy of the rules.** The Revision 4 note that it exports `numbersIn`/`allowedNumbers` for `check-p5.js` now refers to `scripts/lib/code-gate.js`.
+- **`PROMPT_VERSION`** is now `06791d62`. It was `b643d89c` in Revision 6.
+
+**Revision 7 dry-run results** (one run per match, 5 Oct 2026):
+- `check-p1.js` passes on all four matches (560582, 560583, 560585 and 560590), with 6–8 of 8 lines passing per perspective.
+- **The code gate caught two checker misses.** It dropped two `BANTER` lines the checker had passed, both "…whenever these two sides meet". The checker listed B1 (numbers) for each and still passed it.
+- **Rule coverage was complete.** All 64 checks listed every rule ID for their type: E1–E7 plus that type's clauses.
+- **Checker output missed the target.** Per check: mean 296 tokens, median 261, range 136–945, with 20 of 64 checks over 300. That's down from about 720, but not well under 300. The JSON reply itself is short. Most of the rest is adaptive thinking, which the reply format doesn't control.
+- **Cost and time.** Each dry run used about 29.8k input and 6.4–7.2k output tokens. That's about US$0.13 per match, or roughly $49 for a 380-match season before retries. Each dry run took 36–47 s.
 
 ## 1. Architecture
 
@@ -364,7 +399,7 @@ Constants (in `scripts/lib/constants.js`): `MIN_PASSING_COUNT = 4`, `MAX_COMMENT
    - it has fewer than `MIN_PASSING_COUNT` live comments (rows with `superseded_at` null), and
    - its attempt counter (`home_generation_attempts` or `away_generation_attempts`) is below `MAX_GENERATION_ATTEMPTS`.
 3. For each eligible perspective, increment its attempt counter, then call generation once. The counter counts any attempt where the model returned a response, including an unparseable one (which yields zero candidates). If any model call in the attempt fails outright (generation or a safety check: network error, rate limit, outage), write nothing for that attempt, undo the increment, log the error, move on, and make the run exit non-zero so the failure shows red in the Actions tab. The perspective is retried on the next hourly run.
-4. Each candidate goes through `safety-check.js`. Once every candidate in the attempt has been checked, each passing candidate is written to `comments` with the current `PROMPT_VERSION`, unless:
+4. Each candidate goes through `safety-check.js`. Every candidate the model checker passes then goes through the **code gate** (`scripts/lib/code-gate.js`): the deterministic number rules and banned terms listed under `check-p1.js` in §9. `check-p1.js` uses the same code. A line the gate fails is dropped and logged exactly like a checker fail. Once every candidate in the attempt has been checked, each passing candidate is written to `comments` with the current `PROMPT_VERSION`, unless:
    - its text matches an existing live comment for that perspective (case-insensitive, whitespace-trimmed), in which case it's dropped as a duplicate, or
    - the perspective already has `MAX_COMMENTS_PER_PERSPECTIVE` live comments.
 
@@ -390,6 +425,7 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
   - **No goal order or timing** beyond what the half-time and full-time scores show ("while we were already up", "late winner", "we matched them goal for goal"). "Came from behind" is allowed only when `half_time_comeback` is true.
   - **No time words tied to when the line is read.** People read a briefing days after the match, so no "today", "tonight", "yesterday", "last night", "this weekend" or "this morning".
   - **No contradicting the match data**, even in an opinion. A line calling a first half poor when the team led 2-0 at the break fails.
+  - **Code gate.** After the model checker, deterministic code drops any line that breaks a number rule (`STAT` and `HOT_TAKE` numbers must be in the match data; `BANTER` has none) or contains a banned term. These are the rules `check-p1.js` asserts (§3.1 step 4, §9).
 - **`STAT`** — every specific claim must trace to a field in the match data JSON (§3.5): the final score, the half-time score if present, the result, points, clean sheet, home/away, matchday or kickoff date. Checker fails it if any claim isn't in the data, even if the claim might be true (a scorer's name, a league position). Number words count as numbers and must match the data too. `note` names what grounds it, e.g. "From the official final score."
 - **`HOT_TAKE`** — a strong, explicitly-opinion-framed take about how a **team** played, as a whole.
   - Any number, in digits or words, must match the match data.
@@ -397,7 +433,7 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
   - Negative/critical: allowed to be equally strong on **performance**, but the checker fails any line — regardless of how it's hedged or phrased as opinion — that implies the team, its players or staff lacked effort, were dishonest or cheated, or refers to anything off the pitch. "Worst first half I've seen from us all season" passes (provided the half-time score doesn't contradict it); "they couldn't be bothered" fails, and so does "not at the races" in any form (it's lack-of-effort phrasing, so it isn't in the prompt's idiom list).
   - `note`: an outlier warning, e.g. "Strong take — not everyone will agree."
 - **`BANTER`** — generic, team/rivalry-flavoured, not tied to this match's specific data. Must not contain any number or scoreline of any kind (digits or number words), or state a specific date or named past incident, since there is no historical data source to verify such a claim against yet (this is exactly the "invented fact" risk called out in the interview). `note`: "General chat, not a specific claim."
-  - Allowed: how a fixture, an atmosphere or a club's fans feel or behave ("always feels like a proper occasion", "their fans never need an excuse").
+  - Allowed: how a fixture, an atmosphere or a club's fans feel or behave ("always feels like a proper occasion", "their fans never need an excuse"). This deliberately includes "feel" wording that hints at how the fixture tends to go, such as "get through it with a bit of pride intact" or "never as straightforward as people think" (Revision 7).
   - Not allowed: anything about what happened on the pitch in past meetings, including style of play ("we never do a routine 1-0", "every fixture against City turns into a basketball score", "always try and rough us up", "we always struggle there").
   - Parked, not in this build: a historical head-to-head data source, so `BANTER` can eventually make verified specific callbacks.
   - Parked, not in this build: a lineup and match-events data source, so lines can eventually name players and refer to real incidents.
@@ -431,18 +467,18 @@ Rules for every comment:
   call, a save, an injury).
 - Never claim anything about league position, titles, the table, form, or
   other matches this season or in past seasons (no "champions elect", no
-  "mid-table", no "the recurring issue all season"). That includes trends,
-  which imply other matches (no "really starting to organise itself", no
-  "finally clicking"). A clearly personal superlative opinion, like "worst
-  first half I've seen from us all season", is fine.
+  "mid-table", no "the big six", no "the recurring issue all season"). That
+  includes trends, which imply other matches (no "really starting to
+  organise itself", no "finally clicking"). A clearly personal superlative
+  opinion, like "worst first half I've seen from us all season", is fine.
 - Never name a venue, stadium or ground.
 - Never claim anything about the order or timing of goals beyond what the
   half-time and full-time scores show (no "while we were already up", no
   "late winner", no "we matched them goal for goal"). Say "came from
   behind" only when half_time_comeback is true.
 - Never tie a line to when it's read: people read these days later. No
-  "today", "tonight", "yesterday", "last night", "this weekend" or "this
-  morning".
+  "today", "tonight", "yesterday", "last night", "this weekend", "this
+  morning", "last week", "recently" or "back in September".
 - Never contradict the match data, even in an opinion.
 
 Write exactly 8 comments in this mix:
@@ -500,7 +536,7 @@ Return JSON: a list of 8 objects, each { "type", "text", "note" }.
 ```
 You are checking one football comment against a match's real data before it
 ships to a user. Reject anything that could embarrass the user if challenged,
-using the rule for its declared type.
+using the rules for its declared type.
 
 Match data:
 {{match_data_json}}
@@ -513,62 +549,61 @@ no information about who played, who scored, goal times, cards, penalties,
 substitutions or any other incident.
 
 Rules for every type — fail the comment if it:
-- names or clearly identifies any individual (player, manager, coach,
+- E1: names or clearly identifies any individual (player, manager, coach,
   official), including stand-ins like "their keeper" or "the new signing";
-- describes a specific incident that isn't in the match data (a goal by a
-  particular player or at a particular time, a penalty, a card, a VAR call,
-  a save, an injury);
-- claims anything about league position, titles, the table, form, or other
-  matches this season or in past seasons (e.g. "champions elect",
-  "mid-table", "the recurring issue all season"), including trends that
-  imply other matches (e.g. "really starting to organise itself", "finally
-  clicking"). A clearly personal superlative opinion, like "worst first
-  half I've seen from us all season", is not a failure;
-- names a venue, stadium or ground;
-- claims anything about the order or timing of goals beyond what the
+- E2: describes a specific incident that isn't in the match data (a goal by
+  a particular player or at a particular time, a penalty, a card, a VAR
+  call, a save, an injury);
+- E3: claims anything about league position, titles, the table, form, or
+  other matches this season or in past seasons (e.g. "champions elect",
+  "mid-table", "the big six", "the recurring issue all season"), including
+  trends that imply other matches (e.g. "really starting to organise
+  itself", "finally clicking"). A clearly personal superlative opinion,
+  like "worst first half I've seen from us all season", is not a failure;
+- E4: names a venue, stadium or ground;
+- E5: claims anything about the order or timing of goals beyond what the
   half-time and full-time scores show (e.g. "while we were already up",
   "late winner", "we matched them goal for goal"). "Came from behind"
   passes only when half_time_comeback is true;
-- ties itself to when it's read, since people read these days later (e.g.
-  "today", "tonight", "yesterday", "last night", "this weekend", "this
-  morning");
-- contradicts the match data, even as an opinion.
+- E6: ties itself to when it's read, since people read these days later
+  (e.g. "today", "tonight", "yesterday", "last night", "this weekend",
+  "this morning", "last week", "recently", "back in September");
+- E7: contradicts the match data, even as an opinion.
 
-Rules by type:
-- STAT: every specific claim must appear in the match data above. Fail if
-  any claim isn't in the data, even if it might be true (a scorer, a league
-  position, a run of form). Number words count as numbers ("one", "nil",
-  "three") and must match the match data too.
-- HOT_TAKE: positive/enthusiastic opinions pass, however strong, provided
-  they meet the rules for every type. Number words count as numbers ("one",
-  "three") and, like digits, must match the match data. For
-  negative/critical opinions, also fail if it implies (in any phrasing,
-  including hedged as opinion) that the team, its players or staff lacked
-  effort, were dishonest or cheated, or references anything off the pitch.
-  Lack-of-effort phrasing includes "couldn't be bothered" and "not at the
-  races" (in any form, such as "nowhere near the races"): a comment using
-  either always fails. Strong performance criticism alone is not a failure.
-- BANTER: fail if it contains any number or scoreline of any kind (in
-  digits or in words, including "one" or "nil"), states a specific date or
-  named past incident, or says anything about what happened on the pitch
-  in past meetings, including style of play (e.g. "we never do a routine
-  1-0", "every fixture against City turns into a basketball score",
-  "always try and rough us up", "we always struggle there"), since none of
-  that can be verified against real data. Saying how a fixture, an
-  atmosphere or a club's fans feel or behave is fine (e.g. "always feels
-  like a proper occasion", "their fans never need an excuse").
+Rules by type — check only the rules for the comment's declared type:
+- STAT:
+  - S1: fail if any specific claim isn't in the match data above, even if
+    it might be true (a scorer, a league position, a run of form).
+  - S2: fail if any number, in digits or in words ("one", "nil", "three"),
+    doesn't match the match data.
+- HOT_TAKE (positive or enthusiastic opinions pass, however strong; strong
+  criticism of performance alone is not a failure):
+  - H1: fail if any number, in digits or in words ("one", "three"),
+    doesn't match the match data.
+  - H2: fail if it implies, in any phrasing and even hedged as opinion,
+    that the team, its players or staff lacked effort, were dishonest or
+    cheated, or if it refers to anything off the pitch. "Couldn't be
+    bothered" and "not at the races" (in any form, such as "nowhere near
+    the races") always fail.
+- BANTER:
+  - B1: fail if it contains any number or scoreline of any kind, in digits
+    or in words (including "one" or "nil").
+  - B2: fail if it states a specific date or a named past incident.
+  - B3: fail if it says anything about what happened on the pitch in past
+    meetings, including style of play (e.g. "we never do a routine 1-0",
+    "every fixture against City turns into a basketball score", "always
+    try and rough us up", "we always struggle there"). Saying how a
+    fixture, an atmosphere or a club's fans feel or behave is fine (e.g.
+    "always feels like a proper occasion", "their fans never need an
+    excuse").
 
-Go through the rules in the order listed: each rule for every type, then
-the rule for the comment's declared type. For each one, decide "pass" or
-"fail" and give a short reason. Only then give the overall result: "fail"
-if any rule failed, otherwise "pass".
+Go through E1 to E7, then each rule for the comment's declared type, in
+order. Give each rule "pass" or "fail"; add a short reason only for a rule
+that fails, as "fail: <short reason>". The overall result is "fail" if any
+rule failed, otherwise "pass".
 
-Return JSON:
-{
-  "rules": [{ "rule": "<the rule, in a few words>", "result": "pass" | "fail", "reason": "<short reason>" }],
-  "result": "pass" | "fail",
-  "reason": "<why, if failed>"
-}
+Return only this JSON, with one entry per rule you checked:
+{"rules": {"E1": "pass", "E2": "pass", ..., "E7": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
 ```
 
 ### 3.5 Match data sent to the model (`scripts/lib/match-data.js`)
@@ -697,8 +732,9 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
 - **`scripts/check-p1.js --match <id>`:** runs `run-pipeline.js --match <id> --dry-run` against a known finished match and asserts:
   - both perspectives have at least 4 passing candidates;
   - every `type` is one of the three valid enum values and every `note` is non-empty;
-  - **number check:** every number in a passing `STAT` or `HOT_TAKE` line's text is in the allowed set built from that perspective's match data (full-time and half-time scores, `total_goals`, `winning_margin`, `points_earned`, `matchday`, and the day and year in `kickoff_date`), and a passing `BANTER` line contains no number at all. Numbers are detected both as digits and as number words: `nil`, `zero` and `one` to `twenty`, including hyphenated forms such as `three-one`. A standalone `one` counts only in a score form ("one-nil", "one-one", "one-all") or when followed by goal, goals, point or points; idioms such as "one of", "in one game" and "no one" are ignored.
-  - **banned terms:** no passing line's text contains "champion", "title", "table", "mid-table", "top four", "relegat", "league position", "today", "tonight", "yesterday", "last night", "this weekend" or "this morning", case-insensitive, matched at the start of a word with any ending (so "champions", "relegated" and "tonight's" match, but "comfortable" doesn't match "table").
+  - **number check:** every number in a passing `STAT` or `HOT_TAKE` line's text is in the allowed set built from that perspective's match data (full-time and half-time scores, `total_goals`, `winning_margin`, `points_earned`, `matchday`, and the day and year in `kickoff_date`), and a passing `BANTER` line contains no number at all. Numbers are detected both as digits and as number words: `nil`, `zero` and `one` to `twenty`, including hyphenated forms such as `three-one`. A standalone `one` counts only in a score form ("one-nil", "one-one", "one-all", "one apiece") or when followed by goal, goals, point or points; idioms such as "one of", "in one game" and "no one" are ignored.
+  - **banned terms:** no passing line's text contains "champion", "title", "table", "mid-table", "top four", "relegat", "league position", "big six", "today", "tonight", "yesterday", "last night", "this weekend", "this morning", "back in", "last week" or "recently". Matching is case-insensitive, at the start of a word, with any ending: "champions", "relegated", "tonight's" and "last weekend" match, but "comfortable" doesn't match "table". The exception is "back in", which must be whole words, so "back into" and "back inside" don't match.
+  - The number check and banned terms are the pipeline's own code gate (`scripts/lib/code-gate.js`, §3.1 step 4). `check-p1.js` re-applies them to the stored match, so a line that slipped past the gate still fails the check. It also prints every line the gate dropped, since each one is a line the model checker passed.
   - Nothing is written to Supabase.
 - **`scripts/check-p2.js`:**
   - `https://didyouseethatludicrousdisplaylastnight.co.uk/` returns 200 over HTTPS, and the `http://` and `www.` versions both redirect to it.

@@ -20,18 +20,18 @@ Rules for every comment:
   call, a save, an injury).
 - Never claim anything about league position, titles, the table, form, or
   other matches this season or in past seasons (no "champions elect", no
-  "mid-table", no "the recurring issue all season"). That includes trends,
-  which imply other matches (no "really starting to organise itself", no
-  "finally clicking"). A clearly personal superlative opinion, like "worst
-  first half I've seen from us all season", is fine.
+  "mid-table", no "the big six", no "the recurring issue all season"). That
+  includes trends, which imply other matches (no "really starting to
+  organise itself", no "finally clicking"). A clearly personal superlative
+  opinion, like "worst first half I've seen from us all season", is fine.
 - Never name a venue, stadium or ground.
 - Never claim anything about the order or timing of goals beyond what the
   half-time and full-time scores show (no "while we were already up", no
   "late winner", no "we matched them goal for goal"). Say "came from
   behind" only when half_time_comeback is true.
 - Never tie a line to when it's read: people read these days later. No
-  "today", "tonight", "yesterday", "last night", "this weekend" or "this
-  morning".
+  "today", "tonight", "yesterday", "last night", "this weekend", "this
+  morning", "last week", "recently" or "back in September".
 - Never contradict the match data, even in an opinion.
 
 Write exactly 8 comments in this mix:

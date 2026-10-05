@@ -1,6 +1,8 @@
 // P1 check (SPEC.md §9). Runs `run-pipeline.js --match <id> --dry-run` against a finished match and
 // asserts the passing candidates are fit to write. Prints PASS/FAIL check-p1 and exits 0/1. Never
 // prints secrets. The dry run makes model calls (2 generation + up to 16 safety checks).
+// The number and banned-term rules are the pipeline's own code gate (lib/code-gate.js), re-applied here
+// to the stored match, so a passing line that slips past the gate still fails the check.
 //
 // Usage: node scripts/check-p1.js --match <id>
 
@@ -8,78 +10,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { getServiceClient, unwrap } = require('./lib/supabase-client');
 const { buildMatchData } = require('./lib/match-data');
+const { numbersIn, allowedNumbers, codeGateProblems } = require('./lib/code-gate');
 const { COMMENT_TYPES, MIN_PASSING_COUNT } = require('./lib/constants');
-
-// SPEC.md §9: numbers are detected as digits and as these words, hyphenated forms included
-// ("three-one" is read as three and one).
-const NUMBER_WORDS = Object.freeze({
-  nil: 0, zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
-  nineteen: 19, twenty: 20,
-});
-
-const isNumberWord = (token) => Object.prototype.hasOwnProperty.call(NUMBER_WORDS, token);
-const ONE_COUNTS_BEFORE = new Set(['goal', 'goals', 'point', 'points']);
-
-// Revision 6: a standalone "one" counts only in a score form, joined by a hyphen or en dash with no
-// spaces to another number or to "all" ("one-nil", "two-one", "one-all"), or before goal(s)/point(s)
-// ("one goal", "one-point"). Idioms such as "one of", "in one game" and "no one" are ignored. A spaced
-// dash is punctuation, so "matchday 5 - one of those" doesn't count it.
-function oneCounts(text, tokens, i) {
-  const [prev, self, next] = [tokens[i - 1], tokens[i], tokens[i + 1]];
-  const joined = (a, b) => a && b && /^[-–]$/.test(text.slice(a.end, b.start));
-  const isNumber = (t) => /^\d+$/.test(t.token) || isNumberWord(t.token);
-  if (joined(prev, self) && isNumber(prev)) return true;
-  if (joined(self, next) && (isNumber(next) || next.token === 'all')) return true;
-  return Boolean(next && /^[\s-]+$/.test(text.slice(self.end, next.start)) && ONE_COUNTS_BEFORE.has(next.token));
-}
-
-// Every number in a line, as { token, value }. Words are whole tokens only, so "someone" holds no "one";
-// digits are matched even inside tokens, so "2nd" holds 2.
-function numbersIn(text) {
-  const lower = String(text).toLowerCase();
-  const tokens = [...lower.matchAll(/\d+|[a-z]+/g)].map((m) => ({ token: m[0], start: m.index, end: m.index + m[0].length }));
-  const found = [];
-  tokens.forEach(({ token }, i) => {
-    if (/^\d+$/.test(token)) found.push({ token, value: Number(token) });
-    else if (isNumberWord(token) && (token !== 'one' || oneCounts(lower, tokens, i))) found.push({ token, value: NUMBER_WORDS[token] });
-  });
-  return found;
-}
-
-// SPEC.md §9 / Revisions 5 and 6: no passing line may contain these. Matched case-insensitively at the
-// start of a word with any ending ("champions", "relegated", "tonight's"), so "comfortable" doesn't trip
-// "table"; a space or hyphen counts as the gap in multi-word terms.
-const BANNED_TERMS = Object.freeze([
-  'champion', 'title', 'table', 'mid-table', 'top four', 'relegat', 'league position',
-  'today', 'tonight', 'yesterday', 'last night', 'this weekend', 'this morning',
-]);
-const BANNED_PATTERN = new RegExp(`\\b(?:${BANNED_TERMS.map((t) => t.split(/[\s-]+/).join('[\\s-]+')).join('|')})`, 'gi');
-
-function bannedTermsIn(text) {
-  return [...String(text).matchAll(BANNED_PATTERN)].map((m) => m[0]);
-}
-
-// The numbers a STAT or HOT_TAKE line may contain, from one perspective's match data (SPEC.md §9).
-function allowedNumbers(matchData) {
-  const allowed = new Set();
-  const add = (v) => { if (Number.isInteger(v)) allowed.add(v); };
-  add(matchData.full_time.perspective);
-  add(matchData.full_time.opponent);
-  if (matchData.half_time) {
-    add(matchData.half_time.perspective);
-    add(matchData.half_time.opponent);
-  }
-  add(matchData.total_goals);
-  add(matchData.winning_margin);
-  add(matchData.points_earned);
-  add(matchData.matchday);
-  const date = matchData.kickoff_date.match(/^\w+ (\d+) \w+ (\d+)$/);
-  if (!date) throw new Error(`kickoff_date "${matchData.kickoff_date}" isn't in the "Sat 19 Sep 2026" form`);
-  add(Number(date[1]));
-  add(Number(date[2]));
-  return allowed;
-}
 
 const dedupeKey = (text) => String(text).trim().toLowerCase();
 
@@ -162,23 +94,24 @@ async function main() {
         if (typeof c.text !== 'string' || !c.text.trim()) fail(`${team.slug}: passing candidate has empty text`);
       }
 
-      // Allowed numbers come from the stored match, not from the dry run's own output.
-      const allowed = allowedNumbers(buildMatchData(match, team, opponent));
+      // Match data comes from the stored match, not from the dry run's own output.
+      const matchData = buildMatchData(match, team, opponent);
+      const allowed = allowedNumbers(matchData);
       const seen = Object.fromEntries(COMMENT_TYPES.map((t) => [t, []]));
       for (const c of passing) {
         linesChecked += 1;
-        for (const n of numbersIn(c.text)) {
-          seen[c.type]?.push(n.token);
-          if (c.type === 'BANTER') fail(`${team.slug}: BANTER line contains a number, ${JSON.stringify(n.token)}: ${JSON.stringify(c.text)}`);
-          else if (!allowed.has(n.value)) fail(`${team.slug}: ${c.type} line uses ${JSON.stringify(n.token)} (${n.value}), not in its match data: ${JSON.stringify(c.text)}`);
-        }
-        for (const term of bannedTermsIn(c.text)) fail(`${team.slug}: ${c.type} line contains banned term ${JSON.stringify(term)}: ${JSON.stringify(c.text)}`);
+        for (const n of numbersIn(c.text)) seen[c.type]?.push(n.token);
+        for (const problem of codeGateProblems(c, matchData)) fail(`${team.slug}: ${problem}: ${JSON.stringify(c.text)}`);
       }
 
       const byType = COMMENT_TYPES.map((t) => `${t} ${passing.filter((c) => c.type === t).length}`).join(', ');
       const numbers = COMMENT_TYPES.map((t) => `${t} [${seen[t].join(', ')}]`).join(' ');
       info(`${team.slug}: ${passing.length}/${p.candidates.length} passed (${byType}); numbers ${numbers} ` +
         `vs allowed {${[...allowed].sort((a, b) => a - b).join(', ')}}`);
+      // Lines the model checker passed but the pipeline's code gate dropped: each one is a checker miss.
+      for (const c of p.candidates.filter((x) => x.failed_by === 'code_gate')) {
+        info(`${team.slug}: code gate dropped [${c.type}] ${JSON.stringify(c.text)} (${c.reason.replace(/^code gate: /, '')})`);
+      }
       totals.push(`${team.slug} ${passing.length}/${p.candidates.length}`);
     }
   }
@@ -195,11 +128,7 @@ async function main() {
     'nothing written to Supabase');
 }
 
-if (require.main === module) {
-  main().catch((err) => {
-    console.log(`FAIL check-p1: ${err.message}`);
-    process.exitCode = 1;
-  });
-}
-
-module.exports = { numbersIn, allowedNumbers, bannedTermsIn, NUMBER_WORDS, BANNED_TERMS };
+main().catch((err) => {
+  console.log(`FAIL check-p1: ${err.message}`);
+  process.exitCode = 1;
+});

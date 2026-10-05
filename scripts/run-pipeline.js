@@ -16,6 +16,7 @@ const path = require('path');
 const { getServiceClient, unwrap } = require('./lib/supabase-client');
 const { GENERATION_MODEL } = require('./lib/claude-client');
 const { PROMPT_VERSION, buildMatchData, londonIsoDate } = require('./lib/match-data');
+const { codeGateProblems } = require('./lib/code-gate');
 const { MIN_PASSING_COUNT, MAX_COMMENTS_PER_PERSPECTIVE, MAX_GENERATION_ATTEMPTS } = require('./lib/constants');
 
 const USAGE = 'usage: node scripts/run-pipeline.js [--match <id> [--dry-run]]';
@@ -76,8 +77,9 @@ async function settleWithLimit(items, limit, fn) {
   return results;
 }
 
-// One generation call, then a safety check per well-formed candidate. Returns every candidate
-// with its verdict. Throws if any model call failed outright, after counting the ones that returned.
+// One generation call, then a safety check per well-formed candidate, then the code gate on every line
+// the checker passed. Returns every candidate with its verdict. Throws if any model call failed
+// outright, after counting the ones that returned.
 async function runAttempt(matchData, stats, deps) {
   const gen = await deps.generateComments(matchData);
   stats.generationCalls += 1;
@@ -100,14 +102,24 @@ async function runAttempt(matchData, stats, deps) {
 
   const candidates = gen.candidates.map((c) => {
     const verdict = verdicts.get(c);
-    return {
+    const out = {
       type: c.type,
       text: c.text,
       note: c.note,
       result: verdict ? verdict.result : 'fail',
       reason: verdict ? verdict.reason : c.rejected,
-      rule_checks: verdict?.rules, // the checker's per-rule verdicts, for review; never stored
+      failed_by: verdict ? (verdict.result === 'pass' ? undefined : 'checker') : 'format',
+      // For review only; never stored: the checker's per-rule verdicts and the size of its reply.
+      rule_checks: verdict?.rules,
+      check_output_tokens: verdict?.usage.output_tokens,
     };
+    // SPEC.md §3.1 step 4 (Revision 7): the code gate runs after the model check, and a line it
+    // fails is dropped exactly like a checker fail.
+    if (out.result === 'pass') {
+      const problems = codeGateProblems(c, matchData);
+      if (problems.length) Object.assign(out, { result: 'fail', reason: `code gate: ${problems.join('; ')}`, failed_by: 'code_gate' });
+    }
+    return out;
   });
   return {
     candidates,
