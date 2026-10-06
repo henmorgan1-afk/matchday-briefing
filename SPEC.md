@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built on branch `fpl-player-data` and not yet merged. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
 
 ## How this document is used
 
@@ -496,6 +496,13 @@ Implementation notes for the third round:
 - **Cost.**
   - The runs used 50.9k input and 10.8k output tokens, and 48.0k and 12.0k: about US$0.21 per match, or roughly $81 a season before retries.
   - Checker output per check was a median of 394 and 420 tokens, up to 1,646.
+
+**Left for P5** (the project owner's decision, 6 Oct 2026). These are recorded, not fixed, and Revision 9 merges without them:
+- **E3 false fail.** The checker failed Man City's "second best defensively for long spells" under E3, as a comparison with other matches, though it describes this match.
+- **"almost unheard of"** (Sunderland `HOT_TAKE`) got through. It's a claim about other matches.
+- **"our best outfield player"** (Man United `HOT_TAKE`) got through. It's a claim about position.
+- **"so-called bigger clubs"** (Fulham `BANTER`) got through. It's a claim about status.
+- **The Fulham `STAT` line that opens "From who scored:"** got through. It's the note's wording leaking into the line.
 
 **Stage 1 is done when** both checks pass on a matchday-6 match with player data (10–12 Oct), and the project owner has read that match's dry-run lines.
 
