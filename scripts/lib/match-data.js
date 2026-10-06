@@ -138,6 +138,10 @@ function buildMatchData(match, perspectiveTeam, opponentTeam, playerData = null)
     perspective_side: side,
     full_time: { perspective: ours, opponent: theirs },
     half_time: hasHalfTime ? { perspective: htOurs, opponent: htTheirs } : null,
+    // Goals in each half, from the half-time and full-time scores (Revision 9), so a claim about
+    // either half can be checked. Null when the half-time score isn't stored.
+    first_half_goals: hasHalfTime ? { perspective: htOurs, opponent: htTheirs } : null,
+    second_half_goals: hasHalfTime ? { perspective: ours - htOurs, opponent: theirs - htTheirs } : null,
     result,
     points_earned: result === 'won' ? 3 : result === 'drew' ? 1 : 0,
     clean_sheet: theirs === 0,

@@ -32,10 +32,14 @@ Rules for every comment:
   organise itself", no "finally clicking"). A clearly personal superlative
   opinion, like "worst first half I've seen from us all season", is fine.
 - Never name a venue, stadium or ground.
+- Never say what position a player plays (no "up top", no "at the back"):
+  positions aren't in the match data.
 - Never claim anything about the order or timing of goals beyond what the
   half-time and full-time scores show (no "while we were already up", no
-  "late winner", no "we matched them goal for goal"). Say "came from
-  behind" only when half_time_comeback is true.
+  "late winner", no "we matched them goal for goal"). first_half_goals and
+  second_half_goals say how many goals each side scored in each half, and
+  anything you say about the goals in a half must match them. Say "came
+  from behind" only when half_time_comeback is true.
 - Never tie a line to when it's read: people read these days later. No
   "today", "tonight", "yesterday", "last night", "this weekend", "this
   morning", "last week", "recently" or "back in September".
@@ -52,13 +56,13 @@ Write exactly 8 comments in this mix:
 - 3 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
   match's specific events. No numbers or scorelines of any kind, not even
   number words like "one" or "nil". It can say how a fixture, an atmosphere
-  or a club's fans feel or behave ("always feels like a proper occasion",
-  "their fans never need an excuse"). It must not say anything about what
+  or a club's fans feel or behave. It must not say anything about what
   happened on the pitch in past meetings, including style of play (no "we
   never do a routine 1-0", no "every fixture against them turns into a
   basketball score", no "always try and rough us up", no "we always
   struggle there"), and no specific date or named past incident (you have
-  no way to verify those, so don't invent them). Never name a player.
+  no way to verify those, so don't invent them). Never name a player, and
+  never mention this match's day or date.
 - 3 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played
   as a whole, or how a player listed in "players" played. Positive takes can
   be as enthusiastic as you like. Negative takes can be just as strong about
@@ -89,11 +93,12 @@ Avoid: stacking more than one idiom per line, and any phrase so generic
 it could apply to literally any match (that's the AI-generic failure
 mode this voice reference exists to prevent).
 
-For each comment, also write a one-sentence "note":
-- STAT: say in plain English what it's based on, for someone who doesn't
-  follow football ("From the final score", "From the half-time and final
-  scores", "From who scored"). Never use the match data's field names,
-  such as total_goals, full_time or own_goal_for_us.
+For each comment, also write a one-sentence "note" in plain English, for
+someone who doesn't follow football. Never use the match data's field
+names (such as total_goals, full_time or own_goal_for_us), and never the
+words "match data" or "data".
+- STAT: say what it's based on ("From the final score", "From the
+  half-time and final scores", "From who scored").
 - BANTER: say plainly it's general chat, not a specific claim.
 - HOT_TAKE: flag it as a strong take other fans might disagree with. If it
   criticises a named player, also say which of their events it's based on.

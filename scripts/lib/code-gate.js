@@ -1,6 +1,8 @@
 // Deterministic line checks (SPEC.md §3.1 step 4, §3.3, §9, Revisions 7 and 9). The pipeline runs them
 // as a code gate after the model safety check, and check-p1.js asserts them on passing lines, so both
-// use this file. Pure functions: no model calls, no I/O.
+// use this file. No model calls; the only I/O is reading the generation prompt once, for the copy check.
+
+const { GENERATION_PROMPT_FILE, loadPrompt } = require('./match-data');
 
 // Numbers are detected as digits and as these words, hyphenated forms included ("three-one" is read
 // as three and one).
@@ -125,10 +127,66 @@ function nameProblems({ type, text }, names) {
   return problems;
 }
 
+// ---------------------------------------------------------------- copying the prompt (Revision 9)
+
+// A line that repeats this many words in a row from the generation prompt is copying it.
+const COPY_RUN_WORDS = 5;
+
+// The voice reference's hedges and idioms are offered for reuse word for word, so repeating them
+// isn't copying. Only these three are five words or longer.
+const REUSABLE_PHRASES = Object.freeze(['Say what you like, but', 'second best all over the pitch', 'a game of two halves']);
+
+// Lower-cased words, ignoring punctuation; "I'm" and "City's" stay one word.
+const wordsOf = (s) => String(s).toLowerCase().replace(/[‘’]/g, "'").match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) ?? [];
+
+function runsOf(words) {
+  const runs = [];
+  for (let i = 0; i + COPY_RUN_WORDS <= words.length; i += 1) runs.push(words.slice(i, i + COPY_RUN_WORDS).join(' '));
+  return runs;
+}
+
+// Every run of COPY_RUN_WORDS words in a prompt template. A {{placeholder}} breaks a run, and runs
+// inside REUSABLE_PHRASES are left out.
+function buildPromptRuns(promptText) {
+  const runs = new Set(promptText.split(/\{\{[a-z_]+\}\}/).flatMap((segment) => runsOf(wordsOf(segment))));
+  for (const phrase of REUSABLE_PHRASES) for (const run of runsOf(wordsOf(phrase))) runs.delete(run);
+  return runs;
+}
+
+let generationPromptRuns = null;
+
+// The stretches of a line that repeat COPY_RUN_WORDS or more words in a row from the generation prompt.
+function copiedFromPrompt(text, promptRuns = (generationPromptRuns ??= buildPromptRuns(loadPrompt(GENERATION_PROMPT_FILE)))) {
+  const words = wordsOf(text);
+  const stretches = [];
+  let start = -1;
+  let end = -1;
+  runsOf(words).forEach((run, i) => {
+    if (!promptRuns.has(run)) return;
+    if (start >= 0 && i <= end) {
+      end = i + COPY_RUN_WORDS;
+    } else {
+      if (start >= 0) stretches.push(words.slice(start, end).join(' '));
+      [start, end] = [i, i + COPY_RUN_WORDS];
+    }
+  });
+  if (start >= 0) stretches.push(words.slice(start, end).join(' '));
+  return stretches;
+}
+
+// ---------------------------------------------------------------- notes (Revision 9)
+
+// Notes are read by people who don't follow football, so no note may talk about "data".
+const NOTE_BANNED_PATTERN = /\b(?:match\s+data|data)\b/gi;
+
+function noteProblems(note) {
+  return [...String(note ?? '').matchAll(NOTE_BANNED_PATTERN)].map((m) => `note says ${JSON.stringify(m[0])}`);
+}
+
 // ---------------------------------------------------------------- numbers
 
 // The numbers a STAT or HOT_TAKE line may contain, from one perspective's match data, including
-// each listed player's goal and save counts (Revision 9).
+// each half's goals and each listed player's goal and save counts (Revision 9).
 function allowedNumbers(matchData) {
   const allowed = new Set();
   const add = (v) => { if (Number.isInteger(v)) allowed.add(v); };
@@ -146,6 +204,11 @@ function allowedNumbers(matchData) {
   if (!date) throw new Error(`kickoff_date "${matchData.kickoff_date}" isn't in the "Sat 19 Sep 2026" form`);
   add(Number(date[1]));
   add(Number(date[2]));
+  for (const half of [matchData.first_half_goals, matchData.second_half_goals]) {
+    if (!half) continue;
+    add(half.perspective);
+    add(half.opponent);
+  }
   for (const p of matchData.players ?? []) {
     add(p.events.goal);
     add(p.events.saves);
@@ -155,9 +218,10 @@ function allowedNumbers(matchData) {
 
 // Everything wrong with one line under the deterministic rules; an empty list means it passes.
 // STAT and HOT_TAKE numbers must be in the perspective's allowed set, BANTER may hold no number at all,
-// no type may contain a banned term, and every player name must pass the name rules. `names` comes
-// from nameContext; it's required, so the name rules can't be skipped by leaving it out.
-function codeGateProblems({ type, text }, matchData, names) {
+// no type may contain a banned term, every player name must pass the name rules, no line may repeat
+// five words in a row from the generation prompt, and no note may say "data". `names` comes from
+// nameContext; it's required, so the name rules can't be skipped by leaving it out.
+function codeGateProblems({ type, text, note }, matchData, names) {
   if (!names?.nameIndex) throw new Error('codeGateProblems needs a name context (nameContext) for the name rules');
   const problems = [];
   const allowed = type === 'BANTER' ? null : allowedNumbers(matchData);
@@ -167,6 +231,10 @@ function codeGateProblems({ type, text }, matchData, names) {
   }
   for (const term of bannedTermsIn(text)) problems.push(`contains banned term ${JSON.stringify(term)}`);
   problems.push(...nameProblems({ type, text }, names));
+  for (const stretch of copiedFromPrompt(text)) {
+    problems.push(`repeats ${wordsOf(stretch).length} words in a row from the generation prompt, ${JSON.stringify(stretch)}`);
+  }
+  problems.push(...noteProblems(note));
   return problems;
 }
 
@@ -180,5 +248,9 @@ module.exports = {
   buildNameIndex,
   namesIn,
   nameContext,
+  REUSABLE_PHRASES,
+  buildPromptRuns,
+  copiedFromPrompt,
+  noteProblems,
   codeGateProblems,
 };

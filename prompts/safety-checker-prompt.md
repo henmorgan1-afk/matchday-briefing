@@ -31,15 +31,21 @@ Rules for every type — fail the comment if it:
   itself", "finally clicking"). A clearly personal superlative opinion,
   like "worst first half I've seen from us all season", is not a failure;
 - E4: names a venue, stadium or ground;
-- E5: claims anything about the order or timing of goals beyond what the
-  half-time and full-time scores show (e.g. "while we were already up",
-  "late winner", "we matched them goal for goal"). "Came from behind"
-  passes only when half_time_comeback is true;
+- E5: claims anything about the order or timing of goals beyond what
+  first_half_goals, second_half_goals and the half-time and full-time
+  scores show (e.g. "while we were already up", "late winner", "we
+  matched them goal for goal"). A claim about the goals in either half
+  must match first_half_goals or second_half_goals: "going 2-3 down at
+  the break and still scoring twice ourselves" fails when both of those
+  goals came before the break. "Came from behind" passes only when
+  half_time_comeback is true;
 - E6: ties itself to when it's read, since people read these days later
   (e.g. "today", "tonight", "yesterday", "last night", "this weekend",
   "this morning", "last week", "recently", "back in September");
 - E7: contradicts the match data, even as an opinion;
-- E8: names a player whose "under_18" is true, unless the comment is STAT.
+- E8: names a player whose "under_18" is true, unless the comment is STAT;
+- E9: says what position a player plays (e.g. "up top", "at the back"),
+  since positions aren't in the match data.
 
 Rules by type — check only the rules for the comment's declared type:
 - STAT:
@@ -73,11 +79,13 @@ Rules by type — check only the rules for the comment's declared type:
     "always feels like a proper occasion", "their fans never need an
     excuse").
   - B4: fail if it names a player.
+  - B5: fail if it mentions this match's day or date (e.g. "a Sunday
+    kick-off").
 
-Go through E1 to E8, then each rule for the comment's declared type, in
+Go through E1 to E9, then each rule for the comment's declared type, in
 order. Give each rule "pass" or "fail"; add a short reason only for a rule
 that fails, as "fail: <short reason>". The overall result is "fail" if any
 rule failed, otherwise "pass".
 
 Return only this JSON, with one entry per rule you checked:
-{"rules": {"E1": "pass", "E2": "pass", ..., "E8": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
+{"rules": {"E1": "pass", "E2": "pass", ..., "E9": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
