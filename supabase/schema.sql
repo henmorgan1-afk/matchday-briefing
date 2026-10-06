@@ -1,5 +1,7 @@
 -- Matchday Briefing schema (SPEC.md §2). Run in the Supabase SQL Editor.
--- Safe to re-run: types, tables, indexes and policies are created only if missing.
+-- Safe to re-run: types, tables, columns and indexes are created only if missing, and policies
+-- and grants are re-applied with the same definitions. Nothing that holds data is dropped or
+-- deleted. The whole file is one transaction, so if any statement fails, none of it is applied.
 --
 -- Project settings this file assumes:
 --   * "Automatically expose new tables" is OFF, so no role gets table privileges
@@ -13,6 +15,10 @@
 --   service_role  (secret key, used only by pipeline and check scripts): full DML.
 --                 It bypasses RLS, but still needs table GRANTs.
 --   authenticated: nothing. This build has no accounts.
+--   players and match_events (Revision 9) are service_role only: the frontend doesn't read them,
+--                 and birth_date is personal data.
+
+begin;
 
 -- ---------------------------------------------------------------- types
 
@@ -29,6 +35,15 @@ do $$ begin
   create type checker_status as enum ('passed');
 exception when duplicate_object then null; end $$;
 -- only passed rows are ever written; failed candidates are logged to stdout in the pipeline run, not persisted
+
+do $$ begin
+  create type player_data_status as enum ('pending', 'ok', 'mismatch', 'unavailable');
+exception when duplicate_object then null; end $$;
+-- §2.3; the §3.1 generation gate needs 'ok', 'mismatch' or 'unavailable'
+
+do $$ begin
+  create type match_event_type as enum ('goal', 'own_goal', 'assist', 'red_card', 'pen_missed', 'pen_saved', 'saves');
+exception when duplicate_object then null; end $$;
 
 -- ---------------------------------------------------------------- tables
 
@@ -88,6 +103,37 @@ create table if not exists sessions (
   created_at timestamptz not null default now()
 );
 
+-- ---------------------------------------------------------------- Revision 9: FPL player data (§2.3)
+-- Columns are added only if missing. Existing matches take the default 'pending', so the first run
+-- stores their FPL events; their comments aren't touched.
+
+alter table teams add column if not exists fpl_team_id int;        -- FPL's team id this season; null if not one of FPL's 20
+alter table teams add column if not exists fpl_team_code int;      -- FPL's team code
+
+alter table matches add column if not exists fpl_fixture_id int;   -- the FPL fixture it paired with; null until the cross-check runs
+alter table matches add column if not exists player_data player_data_status not null default 'pending';
+alter table matches add column if not exists finished_seen_at timestamptz;  -- first stored as finished; null if before Revision 9
+alter table matches add column if not exists fpl_data_at timestamptz;       -- when FPL's full-time data was cross-checked
+
+create table if not exists players (  -- upserted from FPL's bootstrap-static every run, never deleted
+  fpl_id int primary key,             -- FPL element id; FPL renumbers these every season
+  web_name text not null,             -- FPL's short display name; not unique
+  first_name text not null,
+  second_name text not null,
+  known_name text,                    -- FPL's "known as" full name; null when FPL gives none
+  birth_date date,                    -- null when FPL gives none; such a player counts as under 18 (§3.3 N5)
+  updated_at timestamptz not null
+);
+
+create table if not exists match_events (  -- written only when the match's score cross-check passes
+  match_id text not null references matches(id),
+  fpl_id int not null references players(fpl_id),
+  team_id text not null references teams(id),  -- the fixture side the stat was listed under, never the player's current team
+  event match_event_type not null,
+  count int not null check (count > 0),
+  primary key (match_id, fpl_id, event)
+);
+
 -- ---------------------------------------------------------------- indexes
 
 create index if not exists matches_status_kickoff_idx on matches (status, kickoff_at desc);
@@ -103,6 +149,9 @@ alter table matches  enable row level security;
 alter table comments enable row level security;
 alter table feedback enable row level security;
 alter table sessions enable row level security;
+alter table players  enable row level security;
+alter table match_events enable row level security;
+-- players and match_events have no anon policy, so anon is refused even before the grants below.
 
 drop policy if exists "anon can read teams" on teams;
 create policy "anon can read teams" on teams for select to anon using (true);
@@ -126,14 +175,16 @@ create policy "anon can insert sessions" on sessions for insert to anon with che
 
 grant usage on schema public to anon, service_role;
 
-revoke all on teams, matches, comments, feedback, sessions from anon, authenticated;
+revoke all on teams, matches, comments, feedback, sessions, players, match_events from anon, authenticated;
 
 grant select on teams, matches, comments to anon;
 grant insert on feedback, sessions to anon;
 -- No SELECT on feedback/sessions for anon, so frontend inserts must use
 -- "Prefer: return=minimal" (the PostgREST default), not return=representation.
 
-grant select, insert, update, delete on teams, matches, comments, feedback, sessions to service_role;
+grant select, insert, update, delete on teams, matches, comments, feedback, sessions, players, match_events to service_role;
 
 -- Make the Data API pick up the new tables immediately.
 notify pgrst, 'reload schema';
+
+commit;

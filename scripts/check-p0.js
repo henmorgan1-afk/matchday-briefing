@@ -3,6 +3,8 @@
 // Usage: node scripts/check-p0.js   (run after node scripts/fetch-matches.js)
 
 const { getServiceClient, getAnonClient, unwrap } = require('./lib/supabase-client');
+const { formatDuration } = require('./fetch-matches');
+const { londonIsoDate } = require('./lib/match-data');
 const { FootballDataClient, isoDate } = require('./lib/football-data-client');
 const { SLUG_PATTERN } = require('./lib/slug');
 const { COMPETITION_CODE, STATUS_MAP, mapStatus, FETCH_DAYS_BACK } = require('./lib/constants');
@@ -101,6 +103,60 @@ async function reportNullability(supabase) {
   return { htVerdict, mdVerdict };
 }
 
+// Revision 9 (SPEC.md §9): the FPL team mapping and the score cross-check, from what's stored.
+// Makes no FPL request.
+async function checkFpl(supabase, now) {
+  const teams = unwrap(await supabase.from('teams').select('id, tla, in_current_season, fpl_team_id, fpl_team_code'), 'read teams');
+  const tlaById = new Map(teams.map((t) => [t.id, t.tla]));
+  const current = teams.filter((t) => t.in_current_season);
+  const mapped = current.filter((t) => t.fpl_team_id != null && t.fpl_team_code != null);
+  if (mapped.length !== 20) {
+    fail(`${mapped.length} of ${current.length} current-season teams have fpl_team_id and fpl_team_code, expected 20` +
+      (current.length > mapped.length ? ` (missing: ${current.filter((t) => !mapped.includes(t)).map((t) => t.tla).join(', ')})` : ''));
+  }
+  const fplIds = mapped.map((t) => t.fpl_team_id);
+  if (new Set(fplIds).size !== fplIds.length) fail('two current-season teams share an fpl_team_id');
+
+  const matches = unwrap(
+    await supabase.from('matches')
+      .select('id, home_team_id, away_team_id, home_score, away_score, kickoff_at, status, player_data, fpl_fixture_id, finished_seen_at, fpl_data_at')
+      .eq('status', 'finished').order('kickoff_at').order('id'),
+    'read finished matches',
+  );
+  const label = (m) => `${m.id} ${londonIsoDate(m.kickoff_at)} ${tlaById.get(m.home_team_id)} v ${tlaById.get(m.away_team_id)}`;
+  const ok = matches.filter((m) => m.player_data === 'ok');
+  const events = ok.length
+    ? unwrap(await supabase.from('match_events').select('match_id, team_id, event, count').in('match_id', ok.map((m) => m.id)), 'read match_events')
+    : [];
+
+  for (const m of ok) {
+    const mine = events.filter((e) => e.match_id === m.id);
+    for (const e of mine) {
+      if (e.team_id !== m.home_team_id && e.team_id !== m.away_team_id) fail(`${label(m)}: an event has team ${e.team_id}, neither side`);
+    }
+    const sum = (teamId, event) => mine.filter((e) => e.team_id === teamId && e.event === event).reduce((n, e) => n + e.count, 0);
+    const home = sum(m.home_team_id, 'goal') + sum(m.away_team_id, 'own_goal');
+    const away = sum(m.away_team_id, 'goal') + sum(m.home_team_id, 'own_goal');
+    if (home !== m.home_score || away !== m.away_score) {
+      fail(`${label(m)}: stored events give ${home}-${away}, but the stored score is ${m.home_score}-${m.away_score}`);
+    }
+    if (m.fpl_fixture_id == null || m.fpl_data_at == null) fail(`${label(m)}: player_data ok but fpl_fixture_id or fpl_data_at is null`);
+  }
+
+  const delay = (m) => (m.finished_seen_at ? formatDuration(Date.parse(m.fpl_data_at) - Date.parse(m.finished_seen_at)) : 'finished before Revision 9');
+  const waited = (m) => (m.finished_seen_at ? formatDuration(now.getTime() - Date.parse(m.finished_seen_at)) : 'finished before Revision 9');
+  const byState = (state) => matches.filter((m) => m.player_data === state);
+  info(`FPL: ${mapped.length}/20 current-season teams mapped; finished matches by player_data: ` +
+    ['ok', 'mismatch', 'unavailable', 'pending'].map((s) => `${s} ${byState(s).length}`).join(', '));
+  info(`FPL cross-check recomputed from stored events: ${ok.length} 'ok' match${ok.length === 1 ? '' : 'es'}`);
+  for (const m of [...ok, ...byState('mismatch'), ...byState('unavailable')]) {
+    info(`  ${label(m)}: ${m.player_data}${m.fpl_data_at ? `, FPL delay ${delay(m)}` : ''}`);
+  }
+  for (const m of byState('mismatch')) info(`  MISMATCH ${label(m)}: FPL's player totals didn't match the stored ${m.home_score}-${m.away_score}`);
+  for (const m of byState('pending')) info(`  waiting for FPL: ${label(m)}, ${waited(m)}`);
+  return { mapped: mapped.length, ok: ok.length };
+}
+
 // The GRANTs + RLS in supabase/schema.sql, exercised with the publishable key the frontend uses.
 async function checkAnonAccess(anon) {
   const teams = await anon.from('teams').select('id').eq('in_current_season', true);
@@ -115,6 +171,11 @@ async function checkAnonAccess(anon) {
     const r = await anon.from(table).select('id').limit(1);
     if (r.error?.code !== '42501') fail(`anon read of ${table} was not refused; it should be insert-only (${r.error ? r.error.message : 'no error'})`);
   }
+  // Revision 9: no anon access at all to the FPL tables (birth_date is personal data).
+  for (const table of ['players', 'match_events']) {
+    const r = await anon.from(table).select('*').limit(1);
+    if (r.error?.code !== '42501') fail(`anon read of ${table} was not refused with "permission denied" (${r.error ? r.error.message : 'no error'})`);
+  }
 
   // Write probes target an id that doesn't exist, so they can't damage data even if a grant
   // is wrong. A missing GRANT gives Postgres error 42501 before RLS is reached; anything else fails.
@@ -128,7 +189,7 @@ async function checkAnonAccess(anon) {
   deniedOrFail(await anon.from('matches').update({ home_score: 0 }).eq('id', PROBE_ID), 'UPDATE on matches');
   deniedOrFail(await anon.from('teams').delete().eq('id', PROBE_ID), 'DELETE on teams');
 
-  info('anon (publishable key): reads teams/matches/comments; cannot read feedback/sessions; cannot insert/update/delete teams or matches');
+  info('anon (publishable key): reads teams/matches/comments; cannot read feedback/sessions/players/match_events; cannot insert/update/delete teams or matches');
 }
 
 async function main() {
@@ -142,6 +203,7 @@ async function main() {
   const teamCount = await checkTeams(supabase);
   await checkStatuses(supabase, apiStatusesLast7, now);
   const { htVerdict, mdVerdict } = await reportNullability(supabase);
+  const fpl = await checkFpl(supabase, now);
   await checkAnonAccess(anon);
 
   if (failures.length) {
@@ -150,7 +212,8 @@ async function main() {
     process.exit(1);
   }
   console.log(`PASS check-p0: ${teamCount} current-season teams with unique valid slugs; ${finishedCount} finished matches stored with matching scores; ` +
-    `all statuses map through STATUS_MAP; anon grants match RLS; half-time ${htVerdict.split(',')[0].toLowerCase()}, matchday ${mdVerdict.split(',')[0].toLowerCase()}`);
+    `all statuses map through STATUS_MAP; anon grants match RLS; half-time ${htVerdict.split(',')[0].toLowerCase()}, matchday ${mdVerdict.split(',')[0].toLowerCase()}; ` +
+    `FPL: ${fpl.mapped}/20 teams mapped, cross-check holds for all ${fpl.ok} 'ok' matches`);
 }
 
 main().catch((err) => {

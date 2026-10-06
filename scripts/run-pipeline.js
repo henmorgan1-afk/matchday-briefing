@@ -4,25 +4,28 @@
 //   node scripts/run-pipeline.js                    fetch, then generate for every eligible finished match
 //   node scripts/run-pipeline.js --match <id>       fetch, then only that match (normal eligibility rules)
 //   node scripts/run-pipeline.js --match <id> --dry-run
-//       One attempt per perspective of a finished match, ignoring eligibility. Prints every
-//       candidate with its pass/fail result as JSON on stdout (logs go to stderr) and saves the
-//       same JSON to review/dryrun-<id>.json. Skips the fetch and writes nothing to Supabase.
+//       One attempt per perspective of a finished match, ignoring eligibility (the generation gate
+//       included). Uses the stored FPL player data, if any. Prints every candidate with its
+//       pass/fail result as JSON on stdout (logs go to stderr) and saves the same JSON to
+//       review/dryrun-<id>.json. Skips the fetch and writes nothing to Supabase.
 //
-// Exits non-zero if the fetch fails, or if any model call or comment write fails. A perspective
-// whose attempt failed keeps its old attempt counter and is retried on the next run.
+// Exits non-zero if the fetch or its FPL step fails, or if any model call or comment write fails.
+// A perspective whose attempt failed keeps its old attempt counter and is retried on the next run.
 
 const fs = require('fs');
 const path = require('path');
-const { getServiceClient, unwrap } = require('./lib/supabase-client');
+const { getServiceClient, unwrap, readAll } = require('./lib/supabase-client');
 const { GENERATION_MODEL } = require('./lib/claude-client');
 const { PROMPT_VERSION, buildMatchData, londonIsoDate } = require('./lib/match-data');
-const { codeGateProblems } = require('./lib/code-gate');
-const { MIN_PASSING_COUNT, MAX_COMMENTS_PER_PERSPECTIVE, MAX_GENERATION_ATTEMPTS } = require('./lib/constants');
+const { codeGateProblems, openingWords } = require('./lib/code-gate');
+const { readPlayerData, readNameIndex, perspectiveNames } = require('./lib/player-data');
+const {
+  MIN_PASSING_COUNT, MAX_COMMENTS_PER_PERSPECTIVE, MAX_GENERATION_ATTEMPTS, PLAYER_DATA_READY,
+} = require('./lib/constants');
 
 const USAGE = 'usage: node scripts/run-pipeline.js [--match <id> [--dry-run]]';
 const SIDES = ['home', 'away'];
 const CHECK_CONCURRENCY = 4;
-const PAGE_SIZE = 1000;
 const ID_CHUNK = 100;
 const REVIEW_DIR = path.join(__dirname, '..', 'review');
 
@@ -78,9 +81,10 @@ async function settleWithLimit(items, limit, fn) {
 }
 
 // One generation call, then a safety check per well-formed candidate, then the code gate on every line
-// the checker passed. Returns every candidate with its verdict. Throws if any model call failed
-// outright, after counting the ones that returned.
-async function runAttempt(matchData, stats, deps) {
+// the checker passed. `names` is the perspective's name context for the gate's name rules. Returns
+// every candidate with its verdict. Throws if any model call failed outright, after counting the ones
+// that returned.
+async function runAttempt(matchData, names, stats, deps) {
   const gen = await deps.generateComments(matchData);
   stats.generationCalls += 1;
   addUsage(stats, gen.usage);
@@ -116,7 +120,7 @@ async function runAttempt(matchData, stats, deps) {
     // SPEC.md §3.1 step 4 (Revision 7): the code gate runs after the model check, and a line it
     // fails is dropped exactly like a checker fail.
     if (out.result === 'pass') {
-      const problems = codeGateProblems(c, matchData);
+      const problems = codeGateProblems(c, matchData, names);
       if (problems.length) Object.assign(out, { result: 'fail', reason: `code gate: ${problems.join('; ')}`, failed_by: 'code_gate' });
     }
     return out;
@@ -128,17 +132,6 @@ async function runAttempt(matchData, stats, deps) {
 }
 
 // ---------------------------------------------------------------- Supabase
-
-// Reads every row of an ordered query, a page at a time, until a page comes back empty, so a
-// lower max-rows setting on the project can't silently truncate the result.
-async function readAll(buildQuery, context) {
-  const rows = [];
-  for (;;) {
-    const page = unwrap(await buildQuery().range(rows.length, rows.length + PAGE_SIZE - 1), context);
-    if (page.length === 0) return rows;
-    rows.push(...page);
-  }
-}
 
 async function readMatch(supabase, matchId) {
   const rows = unwrap(await supabase.from('matches').select('*').eq('id', matchId), `read match ${matchId}`);
@@ -187,6 +180,15 @@ async function readLiveTexts(supabase, matchId, teamId) {
   return rows.map((r) => r.text);
 }
 
+// Live comment texts for both perspectives of a match, for the variety check.
+async function readLiveMatchTexts(supabase, matchId) {
+  const rows = await readAll(
+    () => supabase.from('comments').select('id, text').eq('match_id', matchId).is('superseded_at', null).order('id'),
+    `read live comments for match ${matchId}`,
+  );
+  return rows.map((r) => r.text);
+}
+
 // Moves an attempt counter from `from` to `to` only if it still reads `from`, so two overlapping
 // runs can't both claim the same attempt. Returns whether the update happened.
 async function moveAttemptCounter(supabase, matchId, field, from, to) {
@@ -213,8 +215,33 @@ function describeFailure(err) {
   return `${err?.name ?? 'Error'}${status}: ${err?.message ?? err}`;
 }
 
-// SPEC.md §3.1 steps 2-5 for one perspective. Returns a report for the summary line.
-async function processPerspective(supabase, match, side, teams, liveCount, stats, deps, label) {
+// The run's name index, and each match's stored player data and opening words, each read at most
+// once, and only when a perspective actually needs an attempt.
+function runContext(supabase) {
+  let nameIndex = null;
+  const playerData = new Map();
+  const openings = new Map();
+  return {
+    async nameIndex() {
+      nameIndex ??= await readNameIndex(supabase);
+      return nameIndex;
+    },
+    async playerData(match) {
+      if (!playerData.has(match.id)) playerData.set(match.id, await readPlayerData(supabase, match));
+      return playerData.get(match.id);
+    },
+    // The first three words of every line written for either side of the match: its live comments,
+    // plus every line this run writes for it (the Set is shared by both perspectives).
+    async openings(match) {
+      if (!openings.has(match.id)) openings.set(match.id, new Set((await readLiveMatchTexts(supabase, match.id)).map(openingWords)));
+      return openings.get(match.id);
+    },
+  };
+}
+
+// SPEC.md §3.1 steps 2-5 for one perspective. Returns a report for the summary line. The match has
+// already passed the generation gate.
+async function processPerspective(supabase, match, side, teams, liveCount, stats, deps, label, ctx) {
   const { team, opponent } = sideTeams(match, side, teams);
   const field = `${side}_generation_attempts`;
   let attempts = match[field];
@@ -223,8 +250,11 @@ async function processPerspective(supabase, match, side, teams, liveCount, stats
 
   if (!(live < MIN_PASSING_COUNT && attempts < MAX_GENERATION_ATTEMPTS)) return report;
 
-  const matchData = buildMatchData(match, team, opponent);
+  const playerData = await ctx.playerData(match);
+  const matchData = buildMatchData(match, team, opponent, playerData);
+  const names = perspectiveNames(await ctx.nameIndex(), match, team, playerData);
   const liveKeys = new Set((await readLiveTexts(supabase, match.id, team.id)).map(dedupeKey));
+  const openings = await ctx.openings(match);
 
   while (live < MIN_PASSING_COUNT && attempts < MAX_GENERATION_ATTEMPTS) {
     if (!(await moveAttemptCounter(supabase, match.id, field, attempts, attempts + 1))) {
@@ -236,7 +266,7 @@ async function processPerspective(supabase, match, side, teams, liveCount, stats
 
     let attempt;
     try {
-      attempt = await runAttempt(matchData, stats, deps);
+      attempt = await runAttempt(matchData, names, stats, deps);
     } catch (err) {
       await undoAttempt(supabase, match.id, field, attempts);
       log(`MODEL CALL FAILED: ${label} ${team.slug} attempt ${attempts}: ${describeFailure(err)}; nothing written, attempt undone, retried next run`);
@@ -256,11 +286,18 @@ async function processPerspective(supabase, match, side, teams, liveCount, stats
         log(`  DROPPED ${label} ${team.slug} [${c.type}] ${JSON.stringify(c.text)}: duplicate of a live comment`);
         continue;
       }
+      // Revision 9 variety check: across both sides of the match.
+      const opening = openingWords(c.text);
+      if (openings.has(opening)) {
+        log(`  DROPPED ${label} ${team.slug} [${c.type}] ${JSON.stringify(c.text)}: opens with the same three words as a line already written for this match, ${JSON.stringify(opening)}`);
+        continue;
+      }
       if (live + rows.length >= MAX_COMMENTS_PER_PERSPECTIVE) {
         log(`  DROPPED ${label} ${team.slug} [${c.type}] ${JSON.stringify(c.text)}: perspective already has ${MAX_COMMENTS_PER_PERSPECTIVE} live comments`);
         continue;
       }
       liveKeys.add(key);
+      openings.add(opening);
       rows.push({
         match_id: match.id,
         perspective_team_id: team.id,
@@ -320,12 +357,18 @@ function printTotals(stats, print) {
 }
 
 async function runNormal(opts, deps) {
+  const supabase = deps.supabase;
+  const stats = newStats();
   if (deps.fetchMatches) {
     const fetched = await deps.fetchMatches();
     if (fetched) require('./fetch-matches').logFetchSummary(fetched);
+    // SPEC.md §2.3: if the FPL step failed, nothing is generated this run, and the run fails.
+    if (fetched?.fpl?.error) {
+      log('FPL step failed, so nothing is generated this run');
+      printTotals(stats, log);
+      return { ok: false, stats };
+    }
   }
-  const supabase = deps.supabase;
-  const stats = newStats();
   let matches;
   if (opts.matchId) {
     const match = await readMatch(supabase, opts.matchId);
@@ -344,12 +387,19 @@ async function runNormal(opts, deps) {
   if (matches.length) {
     const teams = await readTeams(supabase);
     const liveCounts = await readLiveCounts(supabase, matches.map((m) => m.id));
+    const ctx = runContext(supabase);
     for (const match of matches) {
       const label = matchLabel(match, teams);
+      // The generation gate (SPEC.md §3.1 step 2): a match waiting for FPL isn't attempted. The fetch
+      // summary lists every waiting match on every run; a --match run also says so here.
+      if (!PLAYER_DATA_READY.includes(match.player_data)) {
+        if (opts.matchId) log(`${label} — waiting for FPL player data (player_data ${match.player_data}); nothing generated`);
+        continue;
+      }
       const reports = [];
       for (const side of SIDES) {
         const teamId = side === 'home' ? match.home_team_id : match.away_team_id;
-        const report = await processPerspective(supabase, match, side, teams, liveCounts.get(`${match.id}:${teamId}`) ?? 0, stats, deps, label);
+        const report = await processPerspective(supabase, match, side, teams, liveCounts.get(`${match.id}:${teamId}`) ?? 0, stats, deps, label, ctx);
         if (report.failed) ok = false;
         reports.push(report);
       }
@@ -370,12 +420,21 @@ async function runDry(opts, deps) {
   const label = matchLabel(match, teams);
   const stats = newStats();
 
+  // The dry run ignores the generation gate and makes no FPL request: it uses whatever is stored.
+  // Its variety check compares candidates only with each other, across both sides in order (home
+  // first), as a fresh generation of the match would; stored comments don't count.
+  const ctx = runContext(supabase);
+  const playerData = await ctx.playerData(match);
+  const nameIndex = await ctx.nameIndex();
+  const openings = new Set();
+
   const ht = match.home_ht_score == null ? '' : ` (HT ${match.home_ht_score}-${match.away_ht_score})`;
   const output = {
     dry_run: true,
     match_id: match.id,
     match: label,
     score: `${match.home_score}-${match.away_score}${ht}`,
+    player_data: match.player_data,
     prompt_version: PROMPT_VERSION,
     generation_model: GENERATION_MODEL,
     run_at: new Date().toISOString(),
@@ -385,10 +444,20 @@ async function runDry(opts, deps) {
   let ok = true;
   for (const side of SIDES) {
     const { team, opponent } = sideTeams(match, side, teams);
-    const matchData = buildMatchData(match, team, opponent);
+    const matchData = buildMatchData(match, team, opponent, playerData);
+    const names = perspectiveNames(nameIndex, match, team, playerData);
     const perspective = { side, team_id: team.id, team: team.short_name, slug: team.slug, match_data: matchData };
     try {
-      const attempt = await runAttempt(matchData, stats, deps);
+      const attempt = await runAttempt(matchData, names, stats, deps);
+      for (const c of attempt.candidates) {
+        if (c.result !== 'pass') continue;
+        const opening = openingWords(c.text);
+        if (openings.has(opening)) {
+          Object.assign(c, { result: 'fail', reason: `variety: opens with the same three words as a line already passed for this match, ${JSON.stringify(opening)}`, failed_by: 'variety' });
+        } else {
+          openings.add(opening);
+        }
+      }
       perspective.generation = attempt.generation;
       perspective.passed = attempt.candidates.filter((c) => c.result === 'pass').length;
       perspective.returned = attempt.candidates.length;

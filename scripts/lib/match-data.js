@@ -1,5 +1,6 @@
 // Match data sent to both prompts (SPEC.md §3.5), prompt templates and PROMPT_VERSION.
-// Every field is stored in matches/teams or computed deterministically from stored fields.
+// Every field is stored in matches/teams/players/match_events or computed deterministically from
+// stored fields.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -38,7 +39,78 @@ function londonIsoDate(isoTimestamp) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function buildMatchData(match, perspectiveTeam, opponentTeam) {
+// Events sent to the prompts, in this order. Assists are stored but never sent (SPEC.md §3.5).
+const PROMPT_EVENTS = ['goal', 'own_goal', 'red_card', 'pen_missed', 'pen_saved', 'saves'];
+
+// FPL's full name: its "known as" name when it has one, otherwise first and second name.
+function fullName(player) {
+  return player.known_name || `${player.first_name} ${player.second_name}`;
+}
+
+// Under 18 on the kickoff date in Europe/London, compared as YYYY-MM-DD strings, so a 29 Feb
+// birthday's 18th falls on 1 Mar in a non-leap year. No birth_date counts as under 18 (§3.3 N5).
+function isUnder18(birthDate, kickoffAt) {
+  if (!birthDate) return true;
+  const eighteenth = `${Number(birthDate.slice(0, 4)) + 18}${birthDate.slice(4, 10)}`;
+  return londonIsoDate(kickoffAt) < eighteenth;
+}
+
+// The players sent to the prompts (SPEC.md §3.5): everyone with an event other than an assist,
+// the perspective team's players first, then by name. Each keeps its fpl_id for the code gate;
+// buildMatchData drops it. Null when the match has no player data.
+// playerData is { events: [{ fpl_id, team_id, event, count }], players: Map(fpl_id -> players row) }.
+function listPlayers(match, perspectiveTeam, playerData) {
+  if (!playerData) return null;
+  const byId = new Map();
+  for (const e of playerData.events) {
+    if (!PROMPT_EVENTS.includes(e.event)) continue;
+    if (e.team_id !== match.home_team_id && e.team_id !== match.away_team_id) {
+      throw new Error(`match ${match.id}: event for player ${e.fpl_id} has team ${e.team_id}, neither side of the match`);
+    }
+    const player = playerData.players.get(e.fpl_id);
+    if (!player) throw new Error(`match ${match.id}: event for player ${e.fpl_id}, who isn't in players`);
+    const entry = byId.get(e.fpl_id) ?? { player, side: e.team_id === perspectiveTeam.id ? 'perspective' : 'opponent', counts: {} };
+    entry.counts[e.event] = (entry.counts[e.event] ?? 0) + e.count;
+    byId.set(e.fpl_id, entry);
+  }
+
+  const entries = [...byId.values()];
+  const webNameCount = new Map();
+  for (const { player } of entries) webNameCount.set(player.web_name, (webNameCount.get(player.web_name) ?? 0) + 1);
+
+  return entries
+    .map(({ player, side, counts }) => ({
+      fpl_id: player.fpl_id,
+      name: webNameCount.get(player.web_name) > 1 ? fullName(player) : player.web_name,
+      side,
+      events: Object.fromEntries(PROMPT_EVENTS.filter((ev) => counts[ev]).map((ev) => [ev, counts[ev]])),
+      under_18: isUnder18(player.birth_date, match.kickoff_at),
+    }))
+    .sort((a, b) => {
+      if (a.side !== b.side) return a.side === 'perspective' ? -1 : 1;
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : a.fpl_id - b.fpl_id;
+    });
+}
+
+// The perspective team's notable moments, as lists of player names (SPEC.md §3.5).
+function buildHooks(players) {
+  const ours = players.filter((p) => p.side === 'perspective');
+  const theirs = players.filter((p) => p.side === 'opponent');
+  const names = (list, test) => list.filter((p) => test(p.events)).map((p) => p.name);
+  return {
+    brace: names(ours, (e) => e.goal === 2),
+    hat_trick: names(ours, (e) => e.goal >= 3),
+    own_goal_for_us: names(theirs, (e) => e.own_goal > 0),
+    own_goal_against_us: names(ours, (e) => e.own_goal > 0),
+    our_red_card: names(ours, (e) => e.red_card > 0),
+    their_red_card: names(theirs, (e) => e.red_card > 0),
+    pen_missed: names(ours, (e) => e.pen_missed > 0),
+    pen_saved: names(ours, (e) => e.pen_saved > 0),
+  };
+}
+
+// playerData is null unless the match's player_data is 'ok'; then players and hooks are null too.
+function buildMatchData(match, perspectiveTeam, opponentTeam, playerData = null) {
   let side;
   if (match.home_team_id === perspectiveTeam.id && match.away_team_id === opponentTeam.id) side = 'home';
   else if (match.away_team_id === perspectiveTeam.id && match.home_team_id === opponentTeam.id) side = 'away';
@@ -55,6 +127,7 @@ function buildMatchData(match, perspectiveTeam, opponentTeam) {
   const htOurs = hasHalfTime ? (side === 'home' ? match.home_ht_score : match.away_ht_score) : null;
   const htTheirs = hasHalfTime ? (side === 'home' ? match.away_ht_score : match.home_ht_score) : null;
   const halfTimeState = !hasHalfTime ? null : htOurs > htTheirs ? 'leading' : htOurs === htTheirs ? 'level' : 'trailing';
+  const players = listPlayers(match, perspectiveTeam, playerData);
 
   return {
     competition: COMPETITION_NAMES[match.competition] ?? match.competition,
@@ -65,6 +138,10 @@ function buildMatchData(match, perspectiveTeam, opponentTeam) {
     perspective_side: side,
     full_time: { perspective: ours, opponent: theirs },
     half_time: hasHalfTime ? { perspective: htOurs, opponent: htTheirs } : null,
+    // Goals in each half, from the half-time and full-time scores (Revision 9), so a claim about
+    // either half can be checked. Null when the half-time score isn't stored.
+    first_half_goals: hasHalfTime ? { perspective: htOurs, opponent: htTheirs } : null,
+    second_half_goals: hasHalfTime ? { perspective: ours - htOurs, opponent: theirs - htTheirs } : null,
     result,
     points_earned: result === 'won' ? 3 : result === 'drew' ? 1 : 0,
     clean_sheet: theirs === 0,
@@ -72,6 +149,8 @@ function buildMatchData(match, perspectiveTeam, opponentTeam) {
     winning_margin: Math.abs(ours - theirs),
     half_time_state: halfTimeState,
     half_time_comeback: hasHalfTime ? halfTimeState === 'trailing' && result !== 'lost' : null,
+    players: players && players.map(({ fpl_id, ...rest }) => rest),
+    hooks: players && buildHooks(players),
   };
 }
 
@@ -113,6 +192,9 @@ module.exports = {
   SAFETY_CHECKER_PROMPT_FILE,
   PROMPT_VERSION,
   buildMatchData,
+  listPlayers,
+  fullName,
+  isUnder18,
   matchDataJson,
   formatKickoffDate,
   londonIsoDate,
