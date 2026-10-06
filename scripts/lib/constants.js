@@ -1,4 +1,4 @@
-// Shared constants for the pipeline and check scripts (SPEC.md §2.2, §3.1, §3.2).
+// Shared constants for the pipeline and check scripts (SPEC.md §2.2, §2.3, §3.1, §3.2).
 
 const COMPETITION_CODE = 'PL';
 
@@ -35,6 +35,17 @@ const MAX_GENERATION_ATTEMPTS = 2;
 const FETCH_DAYS_BACK = 14;
 const FETCH_DAYS_AHEAD = 7;
 
+// FPL team mapping (SPEC.md §2.3): FPL short_name -> our tla, for teams whose codes differ.
+// Checked only after the three-letter codes; there's no name matching.
+const FPL_TEAM_ALIASES = Object.freeze({ NFO: 'NOT' });
+
+// Hours a finished match may wait for FPL's data before it gets team-level lines (SPEC.md §2.3).
+// null turns the cap off: a match waits for as long as it takes.
+const FPL_WAIT_HOURS = null;
+
+// player_data values that let a finished match be generated (SPEC.md §3.1, the generation gate).
+const PLAYER_DATA_READY = Object.freeze(['ok', 'mismatch', 'unavailable']);
+
 module.exports = {
   COMPETITION_CODE,
   COMMENT_TYPES,
@@ -46,4 +57,7 @@ module.exports = {
   MAX_GENERATION_ATTEMPTS,
   FETCH_DAYS_BACK,
   FETCH_DAYS_AHEAD,
+  FPL_TEAM_ALIASES,
+  FPL_WAIT_HOURS,
+  PLAYER_DATA_READY,
 };

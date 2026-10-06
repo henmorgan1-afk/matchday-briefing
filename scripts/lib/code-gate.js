@@ -1,6 +1,6 @@
-// Deterministic line checks (SPEC.md §3.1 step 4, §9, Revision 7). The pipeline runs them as a code gate
-// after the model safety check, and check-p1.js asserts them on passing lines, so both use this file.
-// Pure functions: no model calls, no I/O.
+// Deterministic line checks (SPEC.md §3.1 step 4, §3.3, §9, Revisions 7 and 9). The pipeline runs them
+// as a code gate after the model safety check, and check-p1.js asserts them on passing lines, so both
+// use this file. Pure functions: no model calls, no I/O.
 
 // Numbers are detected as digits and as these words, hyphenated forms included ("three-one" is read
 // as three and one).
@@ -57,7 +57,78 @@ function bannedTermsIn(text) {
   return [...String(text).matchAll(BANNED_PATTERN)].map((m) => m[0]);
 }
 
-// The numbers a STAT or HOT_TAKE line may contain, from one perspective's match data.
+// ---------------------------------------------------------------- player names (Revision 9)
+
+// Accents are ignored when matching names ("Martinez" is "Martínez"); case isn't.
+const foldName = (s) => String(s).normalize('NFD').replace(/\p{M}/gu, '').replace(/[‘’]/g, "'");
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// A player's names, as the gate looks for them: web_name, web_name without its initial
+// ("Becker" for "A.Becker", "Tóth" for "Tóth.A", "Bruno" for "Bruno G."), and full name
+// (known_name, otherwise first and second name).
+function nameVariants(player) {
+  const web = player.web_name.trim();
+  const bare = web.replace(/^\p{Lu}\.\s*/u, '').replace(/\s*\.\p{Lu}$/u, '').replace(/\s+\p{Lu}\.$/u, '').trim();
+  const full = player.known_name || `${player.first_name} ${player.second_name}`;
+  return [...new Set([web, bare, full.trim()].filter(Boolean))];
+}
+
+// Every stored FPL player's names, for namesIn. Built once per run from the players table.
+function buildNameIndex(players) {
+  const owners = new Map(); // folded name -> fpl_ids of every player with that name
+  for (const p of players) {
+    for (const variant of nameVariants(p)) {
+      const key = foldName(variant);
+      owners.set(key, [...new Set([...(owners.get(key) ?? []), p.fpl_id])]);
+    }
+  }
+  // Longest first, so "Lisandro Martinez" is read as one name rather than as "Martinez".
+  const alternatives = [...owners.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1)).map(escapeRegExp);
+  const pattern = alternatives.length
+    ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives.join('|')})(?![\\p{L}\\p{N}])`, 'gu')
+    : null;
+  return { owners, pattern };
+}
+
+// Every FPL player name in a line, as whole words, case-sensitively, ignoring accents:
+// [{ name, fplIds }], where fplIds are all the players with that name.
+function namesIn(text, nameIndex) {
+  if (!nameIndex.pattern) return [];
+  return [...foldName(text).matchAll(nameIndex.pattern)].map((m) => ({ name: m[0], fplIds: nameIndex.owners.get(m[0]) }));
+}
+
+// The name context for one perspective: the run's name index, plus that perspective's players
+// (listPlayers in match-data.js, with fpl_id and under_18), or null when the match has no player data.
+function nameContext(nameIndex, matchPlayers) {
+  return { nameIndex, matchPlayers };
+}
+
+// SPEC.md §3.3 name rules. Every name found must belong to exactly one player in this match's
+// players list (N1, N2); an under-18 player may be named only in STAT (N5); BANTER names nobody (B4).
+function nameProblems({ type, text }, names) {
+  const problems = [];
+  const inMatch = new Map((names.matchPlayers ?? []).map((p) => [p.fpl_id, p]));
+  for (const { name, fplIds } of namesIn(text, names.nameIndex)) {
+    const here = fplIds.filter((id) => inMatch.has(id)).map((id) => inMatch.get(id));
+    if (here.length === 0) {
+      problems.push(names.matchPlayers
+        ? `names ${JSON.stringify(name)}, who has no event in this match's player data`
+        : `names ${JSON.stringify(name)}, but this match has no player data`);
+    } else if (here.length > 1) {
+      problems.push(`names ${JSON.stringify(name)}, which ${here.length} players in this match share; only a full name says which`);
+    } else if (type === 'BANTER') {
+      problems.push(`BANTER line names a player, ${JSON.stringify(name)}`);
+    } else if (here[0].under_18 && type !== 'STAT') {
+      problems.push(`${type} line names ${JSON.stringify(name)}, who was under 18 on match day; only STAT may`);
+    }
+  }
+  return problems;
+}
+
+// ---------------------------------------------------------------- numbers
+
+// The numbers a STAT or HOT_TAKE line may contain, from one perspective's match data, including
+// each listed player's goal and save counts (Revision 9).
 function allowedNumbers(matchData) {
   const allowed = new Set();
   const add = (v) => { if (Number.isInteger(v)) allowed.add(v); };
@@ -75,13 +146,19 @@ function allowedNumbers(matchData) {
   if (!date) throw new Error(`kickoff_date "${matchData.kickoff_date}" isn't in the "Sat 19 Sep 2026" form`);
   add(Number(date[1]));
   add(Number(date[2]));
+  for (const p of matchData.players ?? []) {
+    add(p.events.goal);
+    add(p.events.saves);
+  }
   return allowed;
 }
 
 // Everything wrong with one line under the deterministic rules; an empty list means it passes.
 // STAT and HOT_TAKE numbers must be in the perspective's allowed set, BANTER may hold no number at all,
-// and no type may contain a banned term.
-function codeGateProblems({ type, text }, matchData) {
+// no type may contain a banned term, and every player name must pass the name rules. `names` comes
+// from nameContext; it's required, so the name rules can't be skipped by leaving it out.
+function codeGateProblems({ type, text }, matchData, names) {
+  if (!names?.nameIndex) throw new Error('codeGateProblems needs a name context (nameContext) for the name rules');
   const problems = [];
   const allowed = type === 'BANTER' ? null : allowedNumbers(matchData);
   for (const n of numbersIn(text)) {
@@ -89,7 +166,19 @@ function codeGateProblems({ type, text }, matchData) {
     else if (!allowed.has(n.value)) problems.push(`${type} line uses ${JSON.stringify(n.token)} (${n.value}), not in its match data`);
   }
   for (const term of bannedTermsIn(text)) problems.push(`contains banned term ${JSON.stringify(term)}`);
+  problems.push(...nameProblems({ type, text }, names));
   return problems;
 }
 
-module.exports = { NUMBER_WORDS, BANNED_TERMS, numbersIn, bannedTermsIn, allowedNumbers, codeGateProblems };
+module.exports = {
+  NUMBER_WORDS,
+  BANNED_TERMS,
+  numbersIn,
+  bannedTermsIn,
+  allowedNumbers,
+  nameVariants,
+  buildNameIndex,
+  namesIn,
+  nameContext,
+  codeGateProblems,
+};

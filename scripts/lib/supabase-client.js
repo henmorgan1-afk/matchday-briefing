@@ -28,4 +28,17 @@ function unwrap({ data, error }, context) {
   return data;
 }
 
-module.exports = { getServiceClient, getAnonClient, unwrap };
+const PAGE_SIZE = 1000;
+
+// Reads every row of an ordered query, a page at a time, until a page comes back empty, so a
+// lower max-rows setting on the project can't silently truncate the result.
+async function readAll(buildQuery, context) {
+  const rows = [];
+  for (;;) {
+    const page = unwrap(await buildQuery().range(rows.length, rows.length + PAGE_SIZE - 1), context);
+    if (page.length === 0) return rows;
+    rows.push(...page);
+  }
+}
+
+module.exports = { getServiceClient, getAnonClient, unwrap, readAll };

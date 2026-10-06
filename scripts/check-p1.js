@@ -1,8 +1,9 @@
 // P1 check (SPEC.md §9). Runs `run-pipeline.js --match <id> --dry-run` against a finished match and
 // asserts the passing candidates are fit to write. Prints PASS/FAIL check-p1 and exits 0/1. Never
 // prints secrets. The dry run makes model calls (2 generation + up to 16 safety checks).
-// The number and banned-term rules are the pipeline's own code gate (lib/code-gate.js), re-applied here
-// to the stored match, so a passing line that slips past the gate still fails the check.
+// The number, banned-term and name rules (N1, N2, N5) are the pipeline's own code gate
+// (lib/code-gate.js), re-applied here to the stored match and its stored FPL events, so a passing line
+// that slips past the gate still fails the check.
 //
 // Usage: node scripts/check-p1.js --match <id>
 
@@ -10,7 +11,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { getServiceClient, unwrap } = require('./lib/supabase-client');
 const { buildMatchData } = require('./lib/match-data');
-const { numbersIn, allowedNumbers, codeGateProblems } = require('./lib/code-gate');
+const { numbersIn, allowedNumbers, namesIn, codeGateProblems } = require('./lib/code-gate');
+const { readPlayerData, readNameIndex, perspectiveNames } = require('./lib/player-data');
 const { COMMENT_TYPES, MIN_PASSING_COUNT } = require('./lib/constants');
 
 const dedupeKey = (text) => String(text).trim().toLowerCase();
@@ -70,7 +72,14 @@ async function main() {
     fail(`dry-run stdout isn't JSON: ${err.message}`);
   }
 
+  // Player data and names come from what's stored, not from the dry run's own output.
+  const playerData = await readPlayerData(supabase, match);
+  const nameIndex = await readNameIndex(supabase);
+  info(`player_data: ${match.player_data}` +
+    (playerData ? ` (${playerData.events.length} stored events)` : '; no player data, so any FPL player name fails'));
+
   const totals = [];
+  const named = [];
   let linesChecked = 0;
   if (output) {
     info(`match ${output.match_id}: ${output.match} ${output.score}; prompt_version ${output.prompt_version}; ` +
@@ -95,13 +104,15 @@ async function main() {
       }
 
       // Match data comes from the stored match, not from the dry run's own output.
-      const matchData = buildMatchData(match, team, opponent);
+      const matchData = buildMatchData(match, team, opponent, playerData);
+      const names = perspectiveNames(nameIndex, match, team, playerData);
       const allowed = allowedNumbers(matchData);
       const seen = Object.fromEntries(COMMENT_TYPES.map((t) => [t, []]));
       for (const c of passing) {
         linesChecked += 1;
         for (const n of numbersIn(c.text)) seen[c.type]?.push(n.token);
-        for (const problem of codeGateProblems(c, matchData)) fail(`${team.slug}: ${problem}: ${JSON.stringify(c.text)}`);
+        for (const problem of codeGateProblems(c, matchData, names)) fail(`${team.slug}: ${problem}: ${JSON.stringify(c.text)}`);
+        for (const { name } of namesIn(c.text, nameIndex)) named.push(`${team.slug} [${c.type}] ${name}`);
       }
 
       const byType = COMMENT_TYPES.map((t) => `${t} ${passing.filter((c) => c.type === t).length}`).join(', ');
@@ -115,6 +126,7 @@ async function main() {
       totals.push(`${team.slug} ${passing.length}/${p.candidates.length}`);
     }
   }
+  info(`players named in passing lines: ${named.length ? named.join('; ') : 'none'}`);
   info(`Supabase before/after: ${after.comments} comments rows, attempts ${after.home_generation_attempts}/${after.away_generation_attempts}`);
 
   if (failures.length) {
@@ -123,9 +135,10 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`PASS check-p1: match ${matchId} dry run — ${totals.join(', ')} passing; every type and note valid; ` +
-    `${linesChecked} passing lines: STAT/HOT_TAKE numbers all in the match data, no numbers in BANTER, no banned terms; ` +
-    'nothing written to Supabase');
+  console.log(`PASS check-p1: match ${matchId} dry run (player_data ${match.player_data}) — ${totals.join(', ')} passing; ` +
+    `every type and note valid; ${linesChecked} passing lines: STAT/HOT_TAKE numbers all in the match data, no numbers in BANTER, ` +
+    `no banned terms, ${named.length} player names all with an event in the match (N1, N2), none under 18 outside STAT (N5), ` +
+    'none in BANTER; nothing written to Supabase');
 }
 
 main().catch((err) => {
