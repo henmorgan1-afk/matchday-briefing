@@ -473,6 +473,30 @@ Implementation notes for the third round:
 - **`PROMPT_VERSION`** is now `577516aa`.
 - **Review files.** The second-round dry runs are kept as `review/dryrun-560590-v7.json` and `review/dryrun-560583-v5.json`.
 
+**Third-round dry runs** (6 Oct 2026, `PROMPT_VERSION` `577516aa`):
+- **Result.** `check-p1.js` passes on both:
+  - 560590: Man City 5/8, Sunderland 5/8 (10 of 16 lines, against 15 of 16 in the second round);
+  - 560583: Fulham 7/8, Man United 7/8 (14 of 16 both times).
+- **The new rules at work:**
+  - E5 failed Fulham's "that equaliser was no more than we deserved". Both goals came in the second half, so their order is unknown.
+  - B5 failed Man City's "love that for a Sunday kickoff".
+  - The variety check dropped Sunderland's "Our away end always makes more noise…", which opened like a passing Man City line, "Our away end gives Sunderland a proper welcome…".
+  - The copy check dropped Sunderland's "…the worst first-half defending I've seen from us all season".
+  - No passing line orders goals between the two sides, describes how a goal was scored, or has a banned word in its note.
+- **Other checker fails.**
+  - Two were right: Man City's "going into the break three goals up", when the half-time score was 3-2, and Man United's "mid-table London grounds" (E3).
+  - Two look too strict:
+    - Man City's "second best defensively for long spells" failed E3 as a comparison with other matches, though it describes this match;
+    - Sunderland's "that first-half capitulation" failed H2 as implying a lack of effort.
+- **Still getting through:**
+  - "almost unheard of" (a Sunderland `HOT_TAKE`), a claim about other matches;
+  - "our best outfield player" (a Man United `HOT_TAKE`), a position;
+  - "so-called bigger clubs" (a Fulham `BANTER`), a status claim;
+  - a Fulham `STAT` line that opens "From who scored:", the note's own wording.
+- **Cost.**
+  - The runs used 50.9k input and 10.8k output tokens, and 48.0k and 12.0k: about US$0.21 per match, or roughly $81 a season before retries.
+  - Checker output per check was a median of 394 and 420 tokens, up to 1,646.
+
 **Stage 1 is done when** both checks pass on a matchday-6 match with player data (10–12 Oct), and the project owner has read that match's dry-run lines.
 
 ## 1. Architecture
