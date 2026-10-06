@@ -504,6 +504,19 @@ Implementation notes for the third round:
 - **"so-called bigger clubs"** (Fulham `BANTER`) got through. It's a claim about status.
 - **The Fulham `STAT` line that opens "From who scored:"** got through. It's the note's wording leaking into the line.
 
+**After the merge** (6 Oct 2026):
+- **FPL works from GitHub.** A manual run on GitHub (run 37540005440, 22:20 UTC, commit `0f6826c`) reached FPL successfully. It fetched `bootstrap-static/`, mapped 20 of 20 teams and upserted 667 players.
+  - No finished match was waiting, so it didn't request `fixtures/`. That request's first use from GitHub will be after matchday 6's first match.
+- **Open issue: the "hourly" pipeline isn't hourly.** GitHub treats scheduled runs as best-effort. The cron asks for :15 past every hour, but on 5–6 Oct GitHub started the job only every 4 to 9 hours: 7 scheduled runs in 48 hours.
+  - **Start times (UTC):**
+    - 5 Oct: 05:35, 14:32, 22:00;
+    - 6 Oct: 02:17, 10:13, 16:49, 21:36.
+  - **Effects:**
+    - Briefings can appear hours after a match.
+    - The FPL delay logged for the wait cap (`fpl_data_at` minus `finished_seen_at`) will mostly read as zero, because a match's score and its player data usually arrive in the same run. Until runs really are hourly, it can't show how long FPL takes.
+  - **Must be fixed before P4** (tester round 1; §7).
+  - **Next step:** after matchday 6, write up the options using its real run times. One option is an outside service that calls the workflow's manual trigger (`workflow_dispatch`) every hour. It needs a GitHub access token stored outside GitHub.
+
 **Stage 1 is done when** both checks pass on a matchday-6 match with player data (10–12 Oct), and the project owner has read that match's dry-run lines.
 
 ## 1. Architecture
@@ -564,6 +577,7 @@ matchday-briefing/
 - **Data store:** Supabase (Postgres, free tier). Frontend reads `teams`/`matches`/`comments` directly with the anon key under read-only RLS; writes to `feedback` and `sessions` under insert-only anon policies. The frontend calls Supabase's REST endpoint (`<SUPABASE_URL>/rest/v1/...`) with plain `fetch` and the anon key from `frontend/config.js`, so no client library or build step is needed. Pipeline scripts use the service-role key for all writes.
 - **Pipeline runner:** `.github/workflows/pipeline.yml`, a scheduled GitHub Actions job invoking `node scripts/run-pipeline.js`. No separate server.
   - **Schedule: hourly, not tied to kickoff times.** Premier League kickoffs vary (lunchtime, 3pm, evening, midweek), a cron schedule can't follow them, and free-tier scores arrive delayed rather than live. Running every hour is safe because the pipeline only generates for `finished` matches that don't yet have a complete briefing (§3.1), so most runs make two football-data.org requests, one FPL request and no model calls.
+  - **Open issue (Revision 9): it isn't actually hourly.** GitHub treats scheduled runs as best-effort, and on 5–6 Oct it started this job only every 4 to 9 hours. Briefings can appear hours after a match, and the logged FPL delay mostly reads as zero. This must be fixed before P4; see Revision 9 in §0.
   - Trigger block:
     ```yaml
     on:
@@ -1190,7 +1204,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 | **P1 — Generation pipeline** | `generate-comments.js`, `safety-check.js`, prompts, match data builder, retry cap, `--match`/`--dry-run`, `run-pipeline.js`. Revision 9 adds the generation gate, `players` and `hooks` in the match data, and rules N1–N5 in the prompts, checker and code gate | `scripts/lib/match-data.js`, `scripts/lib/claude-client.js`, `scripts/lib/code-gate.js`, `scripts/generate-comments.js`, `scripts/safety-check.js`, `prompts/*.md`, `scripts/run-pipeline.js` | `node scripts/run-pipeline.js --match <id>` produces passing, tagged, noted rows in `comments` for both perspectives, each carrying a `prompt_version`. For a match with player data, passing lines name only players with an event in it |
 | **P2 — Minimal frontend (PWA)** | Homepage, team view, comment cards, empty states, routing, manifest, service worker, Pages deploy on the custom domain | `frontend/index.html`, `frontend/config.js`, `frontend/app.js`, `frontend/style.css`, `frontend/manifest.webmanifest`, `frontend/sw.js`, `frontend/icons/`, `.github/workflows/pages.yml` | Open `https://didyouseethatludicrousdisplaylastnight.co.uk`, pick a team, read and copy real comments; install it to an Android home screen and reopen the last briefing with the network off |
 | **P3 — Connect and cache** | Wire frontend to live Supabase reads; confirm no regeneration on repeat views or repeat pipeline runs | (no new files — integration of P1+P2 outputs) | Two different browsers loading the same `?team=` see identical comments, and running the pipeline a second time makes no generation calls and adds no `comments` rows |
-| **P4 — Tester round 1** | Thumbs writes, session logging, external form link (including the platform questions in §5) | `frontend/app.js` (feedback + session writes), `supabase/schema.sql` (`feedback`, `sessions` tables) | Real rows in `feedback` and `sessions`, plus external-form responses that answer the §10 platform gate |
+| **P4 — Tester round 1** | Thumbs writes, session logging, external form link (including the platform questions in §5). **Prerequisite:** the pipeline really runs hourly (open issue, Revision 9 in §0) | `frontend/app.js` (feedback + session writes), `supabase/schema.sql` (`feedback`, `sessions` tables) | Real rows in `feedback` and `sessions`, plus external-form responses that answer the §10 platform gate |
 | **P5 — Iterate** | Adjust `prompts/*.md` / mix / rubric from P4 data | `prompts/*.md`, `scripts/lib/constants.js` | After a prompt edit, `node scripts/run-pipeline.js --match <id> --dry-run` shows candidates under a new `prompt_version`, and `check-p5.js` prints the thumbs-up rate per `prompt_version` so old and new prompts can be compared on real tester reactions |
 
 ## 8. End-to-end verification
