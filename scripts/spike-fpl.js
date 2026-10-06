@@ -1,4 +1,4 @@
-// Stage 0 spike ("docs/Matchday Briefing better lines and player data.md"): a read-only test of the
+// Stage 0 spike (docs/better-lines-research.md): a read-only test of the
 // Fantasy Premier League (FPL) public feed against the scores stored from football-data.org, which
 // stays the source of scores. Fetches bootstrap-static/ and fixtures/?event=5 once each, with no
 // retries. Reads Supabase with the publishable key, which RLS and the GRANTs limit to SELECT on

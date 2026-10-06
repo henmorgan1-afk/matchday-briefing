@@ -310,7 +310,7 @@ Decisions made while building P2. They include four changes the project owner as
 
 ### Revision 9 (6 Oct 2026, FPL player data: Stage 0 findings and Stage 1)
 
-Lines read generically because the model knows only the score. The project owner decided to keep football-data.org as the source of scores and add player events (scorers, own goals, red cards, penalties missed and saved, saves) from the free Fantasy Premier League (FPL) feed. Background and options are in `docs/Matchday Briefing better lines and player data.md` (6 Oct 2026). This revision records the Stage 0 test and specifies Stage 1. §1, §2, §3.1, §3.3–§3.6, §6, §7 and §9 are updated to match. Where anything earlier in this document differs, this note takes precedence. Nothing in it is built yet.
+Lines read generically because the model knows only the score. The project owner decided to keep football-data.org as the source of scores and add player events (scorers, own goals, red cards, penalties missed and saved, saves) from the free Fantasy Premier League (FPL) feed. Background and options are in `docs/better-lines-research.md` (6 Oct 2026). This revision records the Stage 0 test and specifies Stage 1. §1, §2, §3.1, §3.3–§3.6, §6, §7 and §9 are updated to match. Where anything earlier in this document differs, this note takes precedence. Nothing in it is built yet.
 
 **Stage 0 findings.** `scripts/spike-fpl.js` is a read-only test that writes nothing to Supabase. It was run on 6 Oct 2026 against FPL gameweek 5, and the project owner accepted the result:
 - **Team mapping.** All 20 FPL teams map to `teams`. 19 match by three-letter code. Nottingham Forest doesn't: FPL has `NFO` / "Nott'm Forest", and football-data.org has `NOT` / "Nottingham Forest FC". The spike mapped it with a word-by-word abbreviation rule. Stage 1 uses a fixed alias instead (item 2).
@@ -1041,7 +1041,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 - Quiz/knowledge-testing (cut permanently, per design doc)
 - Verified historical `BANTER` callbacks (parked — needs a future historical data source)
 - Managers, coaches and officials, and any player without an event in the match's FPL data, in any line type. The same goes for in-match incidents neither source reports: goal minutes, assists, whether a goal was a penalty, yellow cards, VAR, injuries and substitutions. Players with an event can be named under §3.3's N1–N5 rules (Revision 9).
-- Goal minutes from a second source, club cards, and writing 16 lines to keep the best 8 (later stages of `docs/Matchday Briefing better lines and player data.md`; not in Revision 9)
+- Goal minutes from a second source, club cards, and writing 16 lines to keep the best 8 (later stages of `docs/better-lines-research.md`; not in Revision 9)
 - League position, table, form or season records in any line (they go stale once cached; see §3.5)
 - Any football-data.org call from the frontend (the pipeline is the only caller; see §1)
 - Confidence flag (`verified`/`provisional`) — deliberately dropped for this build, see §3.3
