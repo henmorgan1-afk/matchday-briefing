@@ -22,8 +22,11 @@ Rules for every type — fail the comment if it:
   identifying any individual fails;
 - E2: describes a specific incident that isn't in the match data (a goal
   at a particular time, an assist, a penalty goal, a yellow card, a VAR
-  call, an injury, a substitution), or gives a player an event or a count
-  that "players" doesn't show;
+  call, an injury, a substitution), gives a player an event or a count
+  that "players" doesn't show, or describes how a goal was scored or what
+  it looked like (composure, a header, a volley, a tap-in, a long-range
+  strike, a "worldie"), since the data says only who scored: "that goal
+  was world class composure" fails;
 - E3: claims anything about league position, titles, the table, form, or
   other matches this season or in past seasons (e.g. "champions elect",
   "mid-table", "the big six", "the recurring issue all season"), including
@@ -37,8 +40,12 @@ Rules for every type — fail the comment if it:
   matched them goal for goal"). A claim about the goals in either half
   must match first_half_goals or second_half_goals: "going 2-3 down at
   the break and still scoring twice ourselves" fails when both of those
-  goals came before the break. "Came from behind" passes only when
-  half_time_comeback is true;
+  goals came before the break. A line that mentions goals by both sides
+  may use order words ("then", "after", "before", "first", "equaliser")
+  only when the goals per half prove that order: "then Cunha gets one and
+  Martinez puts through his own net" fails when both goals came in the
+  same half. "Came from behind" passes only when half_time_comeback is
+  true;
 - E6: ties itself to when it's read, since people read these days later
   (e.g. "today", "tonight", "yesterday", "last night", "this weekend",
   "this morning", "last week", "recently", "back in September");

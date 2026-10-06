@@ -457,6 +457,22 @@ Implementation notes for the second round:
   - The runs used 48.0k input and 10.1k output tokens, and 45.0k and 9.3k: about US$0.19 per match, or roughly $72 a season before retries.
   - Checker output per check rose with the two new rules, to a median of 371 and 398 tokens, against 290 in the first Revision 9 run.
 
+**Third prompt round** (6 Oct 2026, the project owner's decisions after reading the second-round dry runs). The copy-check exemption stays, and so does dropping the six lines that echo the prompt's own examples. §3.1, §3.3, §3.4, §9 and `prompts/*.md` are updated to match.
+1. **Goal order.** A line that mentions goals by both sides may not use order words ("then", "after", "before", "first", "equaliser") unless the goals per half prove that order. Checker rule E5 gains "then Cunha gets one and Martinez puts through his own net" as an example that fails.
+2. **How goals were scored.** The data says only who scored. Checker rule E2 now fails any line that describes how a goal was scored or what it looked like (composure, header, volley, tap-in, long-range strike, "worldie"), with "that goal was world class composure" as an example.
+3. **Variety.** The first-three-words check, planned for later, comes forward. It applies across both sides of a match: a line is dropped if its first three words match a passing line already written for either side. Both sides of 560590 had opened a line with "Say what you like".
+4. **Notes.** "player list" and "players" join the words no note may use.
+
+Implementation notes for the third round:
+- **The generation prompt states rules 1–3 too:** the order words, how goals were scored, and "Avoid … starting two comments with the same three words". Each side is generated separately, so the prompt can only prevent repeats within a side. Repeats across sides are left to the check.
+- **Where the variety check runs.**
+  - The pipeline applies it when lines are written, next to the duplicate check. It compares with the match's live comments for both sides and the lines written earlier in the run. The home side is processed first, so when the two sides clash, the away side's line is the one dropped.
+  - A dry run applies it to its own candidates only, across both sides in order, and marks the later line `failed_by` `variety`.
+  - `check-p1.js` asserts that no two passing lines across both sides open with the same three words.
+- **Effect on earlier lines.** Against the 320 earlier dry-run lines, the copy check with the new prompt drops 10, and the note words drop 11 notes.
+- **`PROMPT_VERSION`** is now `577516aa`.
+- **Review files.** The second-round dry runs are kept as `review/dryrun-560590-v7.json` and `review/dryrun-560583-v5.json`.
+
 **Stage 1 is done when** both checks pass on a matchday-6 match with player data (10–12 Oct), and the project owner has read that match's dry-run lines.
 
 ## 1. Architecture
@@ -727,6 +743,7 @@ Constants (in `scripts/lib/constants.js`): `MIN_PASSING_COUNT = 4`, `MAX_COMMENT
 3. For each eligible perspective, increment its attempt counter, then call generation once. The counter counts any attempt where the model returned a response, including an unparseable one (which yields zero candidates). If any model call in the attempt fails outright (generation or a safety check: network error, rate limit, outage), write nothing for that attempt, undo the increment, log the error, move on, and make the run exit non-zero so the failure shows red in the Actions tab. The perspective is retried on the next hourly run.
 4. Each candidate goes through `safety-check.js`. Every candidate the model checker passes then goes through the **code gate** (`scripts/lib/code-gate.js`): the deterministic number rules, banned terms, name rules, prompt-copy check and note words listed under `check-p1.js` in §9. `check-p1.js` uses the same code. A line the gate fails is dropped and logged exactly like a checker fail. Once every candidate in the attempt has been checked, each passing candidate is written to `comments` with the current `PROMPT_VERSION`, unless:
    - its text matches an existing live comment for that perspective (case-insensitive, whitespace-trimmed), in which case it's dropped as a duplicate, or
+   - **variety (Revision 9):** its first three words (lower-cased, punctuation ignored) match a line already written for either side of the match, whether a live comment or a line written earlier in the run, or
    - the perspective already has `MAX_COMMENTS_PER_PERSPECTIVE` live comments.
 
    Failing candidates are logged with their failure reason and dropped.
@@ -739,6 +756,7 @@ Command-line options for `run-pipeline.js`:
   - Eligibility includes the generation gate, so a `pending` match can be dry-run too.
   - It makes no FPL request. It uses the events already stored: `players` and `hooks` are included when `player_data` is `ok`.
   - The JSON records the match's `player_data`.
+  - **Variety (Revision 9).** It applies the variety check to its own candidates, across both sides in order (home first), as a fresh generation of the match would; stored comments don't count. A later candidate that opens with the same three words as an earlier passing one is marked failed, with `failed_by` `variety`.
 
 ### 3.2 Target composition
 
@@ -753,22 +771,22 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
     - **N3:** criticism of a named player must state its basis, in the line or its note, and fit that event: "For me, [Name]'s red card cost us" can pass, but "anonymous all game" fails, because no event shows it. This is checker rule H3.
     - **N4:** about a named player, performance only. Never effort, honesty, character, private life, looks, nationality or injuries. This extends checker rule H2 to individuals.
     - **N5:** a player under 18 on match day (`under_18` true, which includes every player with no `birth_date`) may be named only in a `STAT` line.
-  - **No specific in-match incidents** that aren't in the match data (§3.5): goal minutes, assists, whether a goal was a penalty, yellow cards, VAR decisions, injuries, substitutions, and any event or count that `players` doesn't show. Neither data source reports these, so any such claim is invented. Who scored, own goals, red cards, missed and saved penalties and save counts are in the data when `players` isn't null.
+  - **No specific in-match incidents** that aren't in the match data (§3.5): goal minutes, assists, whether a goal was a penalty, yellow cards, VAR decisions, injuries, substitutions, and any event or count that `players` doesn't show. Neither data source reports these, so any such claim is invented. Who scored, own goals, red cards, missed and saved penalties and save counts are in the data when `players` isn't null. How a goal was scored or what it looked like ("composure", a header, a volley, a tap-in, a long-range strike, a "worldie") isn't in it, so "that goal was world class composure" fails (checker rule E2, Revision 9).
   - **No league standing, form or other matches.** No claims about league position, titles, the table, form, or other matches this season or in past seasons ("champions elect", "mid-table", "the recurring issue all season"), including trends, which imply other matches ("really starting to organise itself", "finally clicking"). They go stale once cached (§3.5) and can't be checked against the match data. A clearly personal superlative opinion, like "worst first half I've seen from us all season", stays allowed.
   - **No venue, stadium or ground names.** They aren't in the match data.
   - **No player positions** ("up top", "at the back"): positions aren't in the match data. This is checker rule E9 (Revision 9).
-  - **No goal order or timing** beyond what the half-time and full-time scores show ("while we were already up", "late winner", "we matched them goal for goal"). Any claim about the goals in either half must match `first_half_goals` or `second_half_goals` (§3.5). "Going 2-3 down at the break and still scoring twice ourselves" fails when both goals came before the break. "Came from behind" is allowed only when `half_time_comeback` is true.
+  - **No goal order or timing** beyond what the half-time and full-time scores show ("while we were already up", "late winner", "we matched them goal for goal"). Any claim about the goals in either half must match `first_half_goals` or `second_half_goals` (§3.5). "Going 2-3 down at the break and still scoring twice ourselves" fails when both goals came before the break. A line that mentions goals by both sides may use order words ("then", "after", "before", "first", "equaliser") only when the goals per half prove that order: "then Cunha gets one and Martinez puts through his own net" fails when both came in the same half (checker rule E5, Revision 9). "Came from behind" is allowed only when `half_time_comeback` is true.
   - **No time words tied to when the line is read.** People read a briefing days after the match, so no "today", "tonight", "yesterday", "last night", "this weekend" or "this morning".
   - **No contradicting the match data**, even in an opinion. A line calling a first half poor when the team led 2-0 at the break fails.
-  - **Code gate.** After the model checker, deterministic code drops any line that breaks a number rule (`STAT` and `HOT_TAKE` numbers must be in the match data, including each listed player's goal and save counts; `BANTER` has none), contains a banned term, breaks a name rule, copies five words in a row from the generation prompt, or has a note that says "data". These are the rules `check-p1.js` asserts (§3.1 step 4, §9).
+  - **Code gate.** After the model checker, deterministic code drops any line that breaks a number rule (`STAT` and `HOT_TAKE` numbers must be in the match data, including each listed player's goal and save counts; `BANTER` has none), contains a banned term, breaks a name rule, copies five words in a row from the generation prompt, or has a note that says "data", "player list" or "players". These are the rules `check-p1.js` asserts (§3.1 step 4, §9).
     - **Name rules (Revision 9).** The gate looks for every FPL player's name in the line. A name is the `web_name`, the `web_name` without its initial, or the full name (`known_name`, otherwise `first_name` and `second_name`). It matches whole words, case-sensitively, ignoring accents.
     - Each name found must belong to a player in this perspective's `players` (N1, N2). A name shared by two players in `players` counts only as part of a full name.
     - An under-18 player's name may appear only in a `STAT` line (N5), and a `BANTER` line may name no player at all.
     - The gate knows only FPL's names. Managers, officials, first names on their own and nicknames are left to the checker.
     - **No copying the prompt (Revision 9).** A line whose text repeats five or more words in a row from the generation prompt is dropped. Words are compared lower-cased, ignoring punctuation. A `{{placeholder}}` breaks a run.
     - The exception is the voice reference's three idioms of five words or more: "Say what you like, but", "second best all over the pitch" and "a game of two halves". The prompt offers them for reuse, word for word.
-    - **Notes (Revision 9):** no note may say "match data" or "data" (case-insensitive, whole words).
-  - **Notes, every type (Revision 9).** A note is plain English for someone who doesn't follow football. It never uses the match data's field names, and never says "match data" or "data".
+    - **Notes (Revision 9):** no note may say "match data", "data", "player list" or "players" (case-insensitive, whole words).
+  - **Notes, every type (Revision 9).** A note is plain English for someone who doesn't follow football. It never uses the match data's field names, and never says "match data", "data", "player list" or "players".
 - **`STAT`** — every specific claim must trace to a field in the match data JSON (§3.5): the final score, the half-time score if present, the result, points, clean sheet, home/away, matchday, kickoff date, and, when present, `players` and `hooks` (who scored, scored an own goal, was sent off, missed or saved a penalty, or made saves, and how many). Checker fails it if any claim isn't in the data, even if the claim might be true (an assist, a league position). Number words count as numbers and must match the data too. `note` says in plain English what grounds it, for someone who doesn't follow football, e.g. "From the final score" or "From the half-time and final scores". It never uses the match data's field names, such as `total_goals` or `full_time`.
 - **`HOT_TAKE`** — a strong, explicitly-opinion-framed take about how a **team** played as a whole, or how a player in `players` played (Revision 9).
   - Any number, in digits or words, must match the match data.
@@ -815,7 +833,9 @@ Rules for every comment:
 - Never describe a specific incident that isn't in the match data (a goal
   at a particular time, an assist, a penalty goal, a yellow card, a VAR
   call, an injury, a substitution), and never give a player an event or
-  a count that "players" doesn't show.
+  a count that "players" doesn't show. Never describe how a goal was
+  scored or what it looked like (no header, volley, tap-in, long-range
+  strike, "worldie" or "composure"): the match data says only who scored.
 - Never claim anything about league position, titles, the table, form, or
   other matches this season or in past seasons (no "champions elect", no
   "mid-table", no "the big six", no "the recurring issue all season"). That
@@ -829,8 +849,10 @@ Rules for every comment:
   half-time and full-time scores show (no "while we were already up", no
   "late winner", no "we matched them goal for goal"). first_half_goals and
   second_half_goals say how many goals each side scored in each half, and
-  anything you say about the goals in a half must match them. Say "came
-  from behind" only when half_time_comeback is true.
+  anything you say about the goals in a half must match them. In a line
+  that mentions goals by both sides, use order words ("then", "after",
+  "before", "first", "equaliser") only when the goals per half prove that
+  order. Say "came from behind" only when half_time_comeback is true.
 - Never tie a line to when it's read: people read these days later. No
   "today", "tonight", "yesterday", "last night", "this weekend", "this
   morning", "last week", "recently" or "back in September".
@@ -880,14 +902,15 @@ not polished prose:
 - STAT lines read like a live-text snippet (terse, present-feeling: "Two
   up at the break, 3-1 at the end — job done", when the half-time and
   full-time scores say so), not a press-release summary.
-Avoid: stacking more than one idiom per line, and any phrase so generic
-it could apply to literally any match (that's the AI-generic failure
-mode this voice reference exists to prevent).
+Avoid: stacking more than one idiom per line, starting two comments with
+the same three words, and any phrase so generic it could apply to
+literally any match (that's the AI-generic failure mode this voice
+reference exists to prevent).
 
 For each comment, also write a one-sentence "note" in plain English, for
 someone who doesn't follow football. Never use the match data's field
 names (such as total_goals, full_time or own_goal_for_us), and never the
-words "match data" or "data".
+words "match data", "data", "player list" or "players".
 - STAT: say what it's based on ("From the final score", "From the
   half-time and final scores", "From who scored").
 - BANTER: say plainly it's general chat, not a specific claim.
@@ -924,8 +947,11 @@ Rules for every type — fail the comment if it:
   identifying any individual fails;
 - E2: describes a specific incident that isn't in the match data (a goal
   at a particular time, an assist, a penalty goal, a yellow card, a VAR
-  call, an injury, a substitution), or gives a player an event or a count
-  that "players" doesn't show;
+  call, an injury, a substitution), gives a player an event or a count
+  that "players" doesn't show, or describes how a goal was scored or what
+  it looked like (composure, a header, a volley, a tap-in, a long-range
+  strike, a "worldie"), since the data says only who scored: "that goal
+  was world class composure" fails;
 - E3: claims anything about league position, titles, the table, form, or
   other matches this season or in past seasons (e.g. "champions elect",
   "mid-table", "the big six", "the recurring issue all season"), including
@@ -939,8 +965,12 @@ Rules for every type — fail the comment if it:
   matched them goal for goal"). A claim about the goals in either half
   must match first_half_goals or second_half_goals: "going 2-3 down at
   the break and still scoring twice ourselves" fails when both of those
-  goals came before the break. "Came from behind" passes only when
-  half_time_comeback is true;
+  goals came before the break. A line that mentions goals by both sides
+  may use order words ("then", "after", "before", "first", "equaliser")
+  only when the goals per half prove that order: "then Cunha gets one and
+  Martinez puts through his own net" fails when both goals came in the
+  same half. "Came from behind" passes only when half_time_comeback is
+  true;
 - E6: ties itself to when it's read, since people read these days later
   (e.g. "today", "tonight", "yesterday", "last night", "this weekend",
   "this morning", "last week", "recently", "back in September");
@@ -1180,7 +1210,7 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
     - An under-18 player is named only in a `STAT` line, and no `BANTER` line names a player.
     - For a match without player data, any FPL player name fails.
     - The check prints the match's `player_data` and every player named in a passing line. Stage 1 runs it on a match whose `player_data` is `ok`.
-  - **prompt copying and notes (Revision 9):** no passing line's text repeats five or more words in a row from the generation prompt, apart from its three long reusable idioms (§3.3), and no passing line's note says "match data" or "data".
+  - **prompt copying and notes (Revision 9):** no passing line's text repeats five or more words in a row from the generation prompt, apart from its three long reusable idioms (§3.3), and no passing line's note says "match data", "data", "player list" or "players". **Variety:** no two passing lines, across both perspectives, open with the same three words.
   - The number check, banned terms, name rules, copy check and note words are the pipeline's own code gate (`scripts/lib/code-gate.js`, §3.1 step 4). `check-p1.js` re-applies them to the stored match and its stored events, so a line that slipped past the gate still fails the check. It also prints every line the gate dropped, since each one is a line the model checker passed.
   - Nothing is written to Supabase.
 - **`scripts/check-p2.js`:**

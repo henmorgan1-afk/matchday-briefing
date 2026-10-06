@@ -174,10 +174,21 @@ function copiedFromPrompt(text, promptRuns = (generationPromptRuns ??= buildProm
   return stretches;
 }
 
+// ---------------------------------------------------------------- variety (Revision 9)
+
+// A line whose first three words match a line already written for either side of the match is
+// dropped. The check needs the match's other lines, so the pipeline and the dry run apply it
+// when lines are written, not as part of codeGateProblems.
+const OPENING_WORDS = 3;
+
+// A line's first three words, lower-cased, punctuation ignored: "Say what you like, but" -> "say what you".
+const openingWords = (text) => wordsOf(text).slice(0, OPENING_WORDS).join(' ');
+
 // ---------------------------------------------------------------- notes (Revision 9)
 
-// Notes are read by people who don't follow football, so no note may talk about "data".
-const NOTE_BANNED_PATTERN = /\b(?:match\s+data|data)\b/gi;
+// Notes are read by people who don't follow football, so no note may talk about where its facts are
+// stored: "match data", "data", "player list" or "players".
+const NOTE_BANNED_PATTERN = /\b(?:match\s+data|data|player\s+list|players)\b/gi;
 
 function noteProblems(note) {
   return [...String(note ?? '').matchAll(NOTE_BANNED_PATTERN)].map((m) => `note says ${JSON.stringify(m[0])}`);
@@ -251,6 +262,7 @@ module.exports = {
   REUSABLE_PHRASES,
   buildPromptRuns,
   copiedFromPrompt,
+  openingWords,
   noteProblems,
   codeGateProblems,
 };

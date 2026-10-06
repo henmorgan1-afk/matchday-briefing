@@ -11,7 +11,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { getServiceClient, unwrap } = require('./lib/supabase-client');
 const { buildMatchData } = require('./lib/match-data');
-const { numbersIn, allowedNumbers, namesIn, codeGateProblems } = require('./lib/code-gate');
+const { numbersIn, allowedNumbers, namesIn, openingWords, codeGateProblems } = require('./lib/code-gate');
 const { readPlayerData, readNameIndex, perspectiveNames } = require('./lib/player-data');
 const { COMMENT_TYPES, MIN_PASSING_COUNT } = require('./lib/constants');
 
@@ -80,6 +80,7 @@ async function main() {
 
   const totals = [];
   const named = [];
+  const openings = new Map(); // Revision 9 variety: first three words -> the passing line that has them
   let linesChecked = 0;
   if (output) {
     info(`match ${output.match_id}: ${output.match} ${output.score}; prompt_version ${output.prompt_version}; ` +
@@ -113,6 +114,9 @@ async function main() {
         for (const n of numbersIn(c.text)) seen[c.type]?.push(n.token);
         for (const problem of codeGateProblems(c, matchData, names)) fail(`${team.slug}: ${problem}: ${JSON.stringify(c.text)}`);
         for (const { name } of namesIn(c.text, nameIndex)) named.push(`${team.slug} [${c.type}] ${name}`);
+        const opening = openingWords(c.text);
+        if (openings.has(opening)) fail(`${team.slug}: opens with the same three words as ${openings.get(opening)}: ${JSON.stringify(c.text)}`);
+        else openings.set(opening, `${team.slug}'s ${JSON.stringify(c.text)}`);
       }
 
       const byType = COMMENT_TYPES.map((t) => `${t} ${passing.filter((c) => c.type === t).length}`).join(', ');
@@ -122,6 +126,9 @@ async function main() {
       // Lines the model checker passed but the pipeline's code gate dropped: each one is a checker miss.
       for (const c of p.candidates.filter((x) => x.failed_by === 'code_gate')) {
         info(`${team.slug}: code gate dropped [${c.type}] ${JSON.stringify(c.text)} (${c.reason.replace(/^code gate: /, '')})`);
+      }
+      for (const c of p.candidates.filter((x) => x.failed_by === 'variety')) {
+        info(`${team.slug}: variety check dropped [${c.type}] ${JSON.stringify(c.text)} (${c.reason.replace(/^variety: /, '')})`);
       }
       totals.push(`${team.slug} ${passing.length}/${p.candidates.length}`);
     }
@@ -138,7 +145,8 @@ async function main() {
   console.log(`PASS check-p1: match ${matchId} dry run (player_data ${match.player_data}) — ${totals.join(', ')} passing; ` +
     `every type and note valid; ${linesChecked} passing lines: STAT/HOT_TAKE numbers all in the match data, no numbers in BANTER, ` +
     `no banned terms, ${named.length} player names all with an event in the match (N1, N2), none under 18 outside STAT (N5), ` +
-    'none in BANTER; nothing written to Supabase');
+    'none in BANTER, no five-word copies of the generation prompt, no banned note words, no two lines opening with the same ' +
+    'three words across both sides; nothing written to Supabase');
 }
 
 main().catch((err) => {
