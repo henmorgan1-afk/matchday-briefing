@@ -436,6 +436,27 @@ Implementation notes for the second round:
 - **`PROMPT_VERSION`** is now `5fccd873`.
 - **Review files.** The first Revision 9 dry run of 560590 is kept as `review/dryrun-560590-v6.json`, and the Revision 7 dry run of 560583 as `review/dryrun-560583-v4.json`.
 
+**Second-round dry runs** (6 Oct 2026, `PROMPT_VERSION` `5fccd873`):
+- **Result.** `check-p1.js` passes on both:
+  - 560590: Man City 7/8, Sunderland 8/8;
+  - 560583: Fulham 8/8, Man United 6/8.
+- **Fixed since the first run.** No line misstates which half goals came in, copies the old `BANTER` examples, says "data" in a note, or says "up top". Lines used the new fields correctly:
+  - "three goals conceded before the break is hard to defend" (Sunderland);
+  - "only managing one goal in the second half" (Sunderland);
+  - "a goal each in the second half" (Fulham).
+- **N3 tested on real lines.** Three `HOT_TAKE`s criticise Man United's Martinez for the own goal, and each names the own goal as its basis. The own goal appears as `own_goal_for_us` for Fulham and `own_goal_against_us` for Man United.
+- **Caught:**
+  - the code gate dropped a Man City `BANTER` line the checker passed: "these two sets of fans" uses a number word;
+  - the checker failed two Man United `BANTER` lines under B3: "love nothing more than making it scrappy" and "Never an easy away trip".
+- **Still getting through:**
+  - "Leno was excellent between the sticks" states a position (goalkeeper), though only keepers make saves.
+  - "Their fans will be dining out on that result for weeks" is `BANTER` about this match's result.
+  - Notes swapped "match data" for "the player list" ("which the player list confirms he scored").
+  - "then Cunha gets one and Martinez puts through his own net in the second half" can read as Cunha scoring first. The data doesn't say.
+- **Cost and checker output.**
+  - The runs used 48.0k input and 10.1k output tokens, and 45.0k and 9.3k: about US$0.19 per match, or roughly $72 a season before retries.
+  - Checker output per check rose with the two new rules, to a median of 371 and 398 tokens, against 290 in the first Revision 9 run.
+
 **Stage 1 is done when** both checks pass on a matchday-6 match with player data (10–12 Oct), and the project owner has read that match's dry-run lines.
 
 ## 1. Architecture
