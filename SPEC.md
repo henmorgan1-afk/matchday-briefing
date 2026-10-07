@@ -561,17 +561,22 @@ The project owner found that the home page team list didn't look tappable on a p
 1. **Tiles.**
    - The list is still two columns in alphabetical order, down the left column and then down the right, with 12px between the columns and 8px between rows. The hairlines between teams are gone.
    - Each tile is 48px tall or more, with rounded corners. The three-letter code sits in a 30px-wide slot and is still hidden from screen readers; the name follows it.
-   - Long names wrap onto a second line inside the tile.
-2. **Colours.** Four tile tokens join Revision 10's six: `--tile` `#E2D6C5`, `--tile-edge` `#D6C8B6`, `--tile-hover` `#86664B` and `--tile-pressed` `#684D39`. On hover and press the name and code turn `--card`. The pressed shadow is `--ink` at 35%, written with `color-mix` so no colour is written outside the tokens.
+   - Long names wrap at the space onto a second line inside the tile. `overflow-wrap: break-word` stays as a last resort, so a name never spills out. There's no `hyphens: auto`: on phones with a hyphenation dictionary it can split names such as "Crystal Pal-ace" that should wrap at the space.
+   - The name is 16px from 390px wide up and 14px below that (`@media (max-width: 389px)`). Below 390px a tile leaves the name 96–103px, and "Bournemouth" needs 106px at 16px.
+2. **Colours.** Four tile tokens join Revision 10's six: `--tile` `#E2D6C5`, `--tile-edge` `#D6C8B6`, `--tile-hover` `#86664B` and `--tile-pressed` `#684D39`. On hover and press the name and code turn `--card`. The pressed shadow is `--ink` at 35%, written with `color-mix`. A plain `rgba(29,27,23,0.35)` line just before it is the fallback for older phones without `color-mix`, and it's the only colour in `style.css` that isn't a token.
 3. **States.**
    - Hover applies only inside `@media (hover: hover) and (pointer: fine)`, so a phone never keeps a stuck hover colour.
    - Pressed (`:active`) has a darker fill and an inset shadow. iPhone Safari applies `:active` only when a `touchstart` listener exists, so `app.js` adds an empty passive one.
    - Keyboard focus shows a 2px accent outline. The tiles turn off the phone's own tap flash.
 4. **Findings** (7 Oct 2026).
    - `check-p2.js --base http://localhost:8080` passes.
-   - No name spills out of its tile at 360px or 390px wide, and neither page scrolls sideways.
-   - At 360px a tile leaves 96px for the name. "Bournemouth" needs 106px at 16px, so it can't fit on one line, and Chromium on Windows breaks it as "Bournemou / th". The name has `hyphens: auto`, so browsers with an English hyphenation dictionary should show "Bourne-mouth". iOS Safari and Chrome on Android have one, but that isn't tested yet. Every other name either fits or wraps at a space. At 390px every name fits on one line.
-   - Screenshots, in `review/` (local only): `tiles-home-360x800.png`, `tiles-home-390x844.png`, `tiles-hover-1280x800.png` and `tiles-pressed-390x844.png`.
+   - The first build used 16px at every width with `hyphens: auto`. At 360px, Chromium on Windows, which has no hyphenation dictionary, broke "Bournemouth" as "Bournemou / th". Item 1's 14px rule below 390px replaced that.
+   - At 360, 375 and 390px wide:
+     - "Bournemouth" is on one line;
+     - no name is broken mid-word or spills out of its tile;
+     - no page scrolls sideways;
+     - the only wrap is "Brighton / Hove" at 360px, at the space.
+   - Screenshots, in `review/` (local only): `tiles-home-360x800.png`, `tiles-home-375x812.png`, `tiles-home-390x844.png`, `tiles-hover-1280x800.png` and `tiles-pressed-390x844.png`.
 
 ## 1. Architecture
 
