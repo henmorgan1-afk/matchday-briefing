@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "Matchday Briefing",
-  "short_name": "Matchday",
+  "name": "Ludicrous Display",
+  "short_name": "Ludicrous",
   "description": "Short talking points about your Premier League team's last match.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "lang": "en-GB",
-  "theme_color": "#1F5C39",
-  "background_color": "#F4EFE3",
+  "theme_color": "#F2EADB",
+  "background_color": "#F2EADB",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
