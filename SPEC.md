@@ -578,6 +578,43 @@ The project owner found that the home page team list didn't look tappable on a p
      - the only wrap is "Brighton / Hove" at 360px, at the space.
    - Screenshots, in `review/` (local only): `tiles-home-360x800.png`, `tiles-home-375x812.png`, `tiles-home-390x844.png`, `tiles-hover-1280x800.png` and `tiles-pressed-390x844.png`.
 
+### Revision 12 (7 Oct 2026, app icons)
+
+The project owner approved new app icons to replace the P2 dark green set, which Revision 10 left unmatched to the new palette. The work is on branch `app-icons`. Only the icons, the `<head>` icon links, `sw.js`'s precache list, `check-p2.js`'s manifest check and this file change.
+
+1. **Design.**
+   - A brick speech bubble on a cream square. Inside it, a black-and-white football on the left and a cream italic "?" on the right.
+   - The "?" is Source Serif 4 italic 600, the self-hosted file in `frontend/fonts/`.
+   - The favicon is a simplified version: a bigger bubble and ball, no "?" and no text, so it needs no font and still reads at 16–32px.
+   - The icons are the app's own mark, with no club crests or colours (§4).
+2. **Colours.** All are the site's own: cream `#F2EADB` (`--paper`), brick `#8A3A1C` and near-black `#1D1B17` (`--ink`), plus white `#FFFFFF` for the ball. The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, were already `#F2EADB` and are unchanged.
+3. **Source artwork**, in `scripts/icons/`, both drawn on a 100×100 grid:
+   - `icon-master.svg` is the full icon. Its bubble, ball and "?" are in a `<g id="art">` group.
+   - `favicon.svg` is the favicon.
+4. **Files**, all in `frontend/icons/`:
+   - `icon-192.png` (192×192) and `icon-512.png` (512×512): the master artwork, manifest `purpose: any`.
+   - `icon-maskable-512.png` (512×512): manifest `purpose: maskable`. The cream square fills the whole image, and the `#art` group is scaled to 80% around the centre (`transform="translate(10 10) scale(0.8)"`). Nothing is cut off when Android crops it to a circle or a rounded square.
+   - `apple-touch-icon.png` (180×180): the master artwork, opaque, with square corners (iOS rounds them itself).
+   - `favicon.svg`: a copy of `scripts/icons/favicon.svg`.
+   - `favicon-32.png` (32×32): rendered from `favicon.svg`.
+   - Every PNG is 8-bit RGB with no alpha channel.
+   - The first three keep the names of the P2 icons they replace, so the manifest's `icons` array is unchanged. `any` and `maskable` stay as separate entries.
+5. **Links and cache.**
+   - `index.html`'s `<head>` links `icons/favicon.svg` (`type="image/svg+xml"`), `icons/favicon-32.png` (`sizes="32x32"`) and `icons/apple-touch-icon.png` (`rel="apple-touch-icon"`). These replace the old links that pointed at `icon-192.png`.
+   - `sw.js` precaches all six icon files.
+6. **Rebuilding.** `node scripts/icons/make-icons.js` rebuilds all six files from the two SVGs.
+   - It renders with Playwright's Chromium and blocks every network request.
+   - It embeds `frontend/fonts/source-serif-4-latin-600-italic.woff2` with `@font-face`. Before each screenshot it waits for `document.fonts.ready` and stops if the font didn't load.
+   - Change the SVGs, then rerun it. Don't edit the PNGs by hand.
+7. **Check.** `check-p2.js`'s manifest step is stricter; §9 is updated to match.
+8. **Findings** (7 Oct 2026).
+   - `check-p2.js --base http://localhost:8080` passes, with 3 manifest icons at their stated sizes (1 maskable), the 3 page icons, and secrets checked across 24 frontend files.
+   - A preview is in `review/icons-preview.png` (local only). It shows:
+     - `icon-512` at full size;
+     - the maskable icon cropped to a circle and to a rounded square;
+     - `icon-192` and `apple-touch-icon` on dark and light backgrounds;
+     - `favicon-32` at actual size and at 4×.
+
 ## 1. Architecture
 
 ```
@@ -602,6 +639,7 @@ matchday-briefing/
     generate-comments.js        # P1
     safety-check.js             # P1
     run-pipeline.js             # P0+P1 orchestrator, entry point for both cron and manual runs
+    icons/                      # icon-master.svg, favicon.svg and make-icons.js, which rebuilds frontend/icons/ (Revision 12)
     check-p0.js ... check-p5.js # one automated check script per phase, see §9
     verify.js                   # end-to-end runner: pipeline + check-p0 to check-p3 (§8)
   prompts/
@@ -616,7 +654,7 @@ matchday-briefing/
     style.css
     manifest.webmanifest        # PWA manifest: name, icons, start_url, display: standalone
     sw.js                       # service worker: app-shell cache + offline fallback for briefings
-    icons/                      # icon-192.png, icon-512.png, icon-maskable-512.png
+    icons/                      # icon-192.png, icon-512.png, icon-maskable-512.png, apple-touch-icon.png, favicon.svg, favicon-32.png (Revision 12)
   .github/workflows/
     pipeline.yml                # hourly schedule + manual trigger for run-pipeline.js
     pages.yml                   # deploys frontend/ to GitHub Pages on push to main
@@ -1320,7 +1358,7 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
 - **`scripts/check-p2.js`:**
   - `https://didyouseethatludicrousdisplaylastnight.co.uk/` returns 200 over HTTPS, and the `http://` and `www.` versions both redirect to it.
   - Using Playwright with headless Chromium (a plain HTTP fetch can't see what `app.js` renders): the homepage shows one picker entry per current-season row in `teams`, and loading `?team=<slug>` for every one of those slugs renders either at least one comment card or the "No briefing yet" message — never a blank page, an error state, or a browser console error. `?team=not-a-real-team` renders "We don't know that team".
-  - `manifest.webmanifest` has `name`, `start_url`, `display: "standalone"` and 192px + 512px icons that return HTTP 200, and `sw.js` returns 200 with a JavaScript content type.
+  - `manifest.webmanifest` has `name`, `start_url`, `display: "standalone"` and 192px + 512px icons. Every manifest icon returns HTTP 200 and its real pixel size matches its `sizes`, and exactly one is `maskable`. The `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` linked from `index.html` each return 200, and the two PNGs are 32×32 and 180×180 (Revision 12). `sw.js` returns 200 with a JavaScript content type.
   - **Secrets check:** fetches every deployed file under `frontend/` (HTML, JS, CSS, manifest) and fails if the value of `FOOTBALL_DATA_API_KEY`, `ANTHROPIC_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` appears in any of them.
 - **`scripts/check-p3.js --match <id>`:**
   - **Pipeline idempotency:** records the number of `comments` rows for the match, runs `run-pipeline.js --match <id>` again, and asserts the run reported `generation calls this run: 0` and the row count is unchanged.

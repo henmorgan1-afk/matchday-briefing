@@ -107,17 +107,51 @@ async function checkManifestAndWorker(base) {
   if (manifest.display !== 'standalone') fail(`manifest display is ${JSON.stringify(manifest.display)}, expected "standalone"`);
   const icons = Array.isArray(manifest.icons) ? manifest.icons : [];
   for (const size of ['192x192', '512x512']) {
-    const matching = icons.filter((icon) => String(icon.sizes).split(/\s+/).includes(size));
-    if (!matching.length) fail(`manifest has no ${size} icon`);
-    for (const icon of matching) {
-      const r = await fetch(new URL(icon.src, manifestUrl));
-      if (r.status !== 200) fail(`manifest icon ${icon.src} returned ${r.status}`);
-    }
+    if (!icons.some((icon) => String(icon.sizes).split(/\s+/).includes(size))) fail(`manifest has no ${size} icon`);
   }
+  // Every icon loads, and its real pixel size is the one its "sizes" claims.
+  for (const icon of icons) {
+    const r = await fetch(new URL(icon.src, manifestUrl));
+    if (r.status !== 200) { fail(`manifest icon ${icon.src} returned ${r.status}`); continue; }
+    const actual = pngSize(Buffer.from(await r.arrayBuffer()));
+    if (!actual) fail(`manifest icon ${icon.src} is not a PNG`);
+    else if (actual !== icon.sizes) fail(`manifest icon ${icon.src} is ${actual}, but its sizes says ${icon.sizes}`);
+  }
+  const maskable = icons.filter((icon) => String(icon.purpose).split(/\s+/).includes('maskable'));
+  if (maskable.length !== 1) fail(`manifest has ${maskable.length} maskable icons, expected 1`);
+  const linked = await checkPageIcons(base);
   const sw = await fetch(`${base}/sw.js`);
   const type = sw.headers.get('content-type') || '';
   if (sw.status !== 200 || !/javascript/i.test(type)) fail(`sw.js returned ${sw.status} with content type "${type}", expected 200 and JavaScript`);
-  info(`manifest: name "${manifest.name}", display ${manifest.display}, ${icons.length} icons; sw.js ${sw.status} ${type.split(';')[0]}`);
+  info(`manifest: name "${manifest.name}", display ${manifest.display}, ${icons.length} icons at their stated sizes (${maskable.length} maskable); ` +
+    `page icons ${linked.join(', ')}; sw.js ${sw.status} ${type.split(';')[0]}`);
+}
+
+// "WxH" from a PNG's IHDR chunk, or null if the bytes aren't a PNG.
+function pngSize(buf) {
+  if (buf.length < 24 || buf.toString('latin1', 1, 4) !== 'PNG' || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
+  return `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`;
+}
+
+// The favicon and apple-touch-icon links in index.html (Revision 12): each file loads, and each PNG
+// is the size it should be.
+const PAGE_ICONS = { 'favicon.svg': null, 'favicon-32.png': '32x32', 'apple-touch-icon.png': '180x180' };
+
+async function checkPageIcons(base) {
+  const html = await (await fetch(`${base}/`)).text();
+  const hrefs = [...html.matchAll(/<link\s[^>]*rel="(?:icon|apple-touch-icon)"[^>]*>/g)]
+    .map(([tag]) => (tag.match(/href="([^"]+)"/) || [])[1]).filter(Boolean);
+  const found = [];
+  for (const [name, size] of Object.entries(PAGE_ICONS)) {
+    const href = hrefs.find((h) => h.split('/').pop() === name);
+    if (!href) { fail(`index.html has no icon link to ${name}`); continue; }
+    const r = await fetch(new URL(href, `${base}/`));
+    if (r.status !== 200) { fail(`${href} returned ${r.status}`); continue; }
+    const body = Buffer.from(await r.arrayBuffer());
+    if (size && pngSize(body) !== size) fail(`${href} is ${pngSize(body) || 'not a PNG'}, expected ${size}`);
+    found.push(href);
+  }
+  return found;
 }
 
 async function checkSecrets(base, files) {
