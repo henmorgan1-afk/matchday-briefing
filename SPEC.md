@@ -585,7 +585,7 @@ The project owner approved new app icons to replace the P2 dark green set, which
 1. **Design.**
    - A brick speech bubble on a cream square. Inside it, a black-and-white football on the left and a cream italic "?" on the right.
    - The "?" is Source Serif 4 italic 600, the self-hosted file in `frontend/fonts/`.
-   - The favicon is a simplified version: a bigger bubble and ball, no "?" and no text, so it needs no font and still reads at 16–32px.
+   - The favicon (the tab icon) is a bigger bubble holding only the ball, with no "?" and no text, so it needs no font. The ball is the full football at radius 19: the centre patch, five edge patches and the seams joining them. A first version showed only the centre patch; at 32px it read more like an eye than a ball.
    - The icons are the app's own mark, with no club crests or colours (§4).
 2. **Colours.** All are the site's own: cream `#F2EADB` (`--paper`), brick `#8A3A1C` and near-black `#1D1B17` (`--ink`), plus white `#FFFFFF` for the ball. The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, were already `#F2EADB` and are unchanged.
 3. **Source artwork**, in `scripts/icons/`, both drawn on a 100×100 grid:
@@ -613,7 +613,7 @@ The project owner approved new app icons to replace the P2 dark green set, which
      - `icon-512` at full size;
      - the maskable icon cropped to a circle and to a rounded square;
      - `icon-192` and `apple-touch-icon` on dark and light backgrounds;
-     - `favicon-32` at actual size and at 4×.
+     - `favicon.svg` at 16px, and `favicon-32` at actual size and at 4×.
 
 ## 1. Architecture
 
