@@ -25,6 +25,9 @@
   const main = document.getElementById('main');
   const toastEl = document.getElementById('toast');
 
+  // iPhone Safari only applies :active (the team tiles' pressed colour) when a touchstart listener exists.
+  document.addEventListener('touchstart', () => {}, { passive: true });
+
   // ---------------------------------------------------------------- data
 
   async function rest(pathAndQuery) {

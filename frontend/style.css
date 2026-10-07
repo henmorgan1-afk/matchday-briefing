@@ -1,5 +1,6 @@
 /* Ludicrous Display (SPEC.md §4), in design direction A, "Matchday programme" (Revision 10). Every
-   colour is one of the six tokens in :root. --paper is also the manifest's theme_color and
+   colour is one of the tokens in :root (six from Revision 10, four tile colours from Revision 11),
+   apart from the pressed tile shadow's rgba fallback for browsers without color-mix. --paper is also the manifest's theme_color and
    background_color, and the theme-color meta tag. The fonts are self-hosted in fonts/ (SIL OFL 1.1,
    see fonts/OFL.txt). */
 
@@ -99,6 +100,10 @@
   --muted: #5A5348;
   --rule: #CDBFA6;
   --card: #F8F2E6;
+  --tile: #E2D6C5;
+  --tile-edge: #D6C8B6;
+  --tile-hover: #86664B;
+  --tile-pressed: #684D39;
 
   --display: "Oswald", "Arial Narrow", sans-serif;
   --serif: "Source Serif 4", Georgia, serif;
@@ -309,28 +314,77 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
 
 .team-list--pills .team-link:hover { border-color: var(--accent); }
 
-/* Every team: two columns, filled top to bottom, then left to right. */
+/* Every team: filled tiles in two columns, filled top to bottom, then left to right (Revision 11). */
 .team-list--columns {
   columns: 2;
-  column-gap: 20px;
+  column-gap: 12px;
 }
 
-.team-list--columns li { break-inside: avoid; }
+.team-list--columns li {
+  break-inside: avoid;
+  margin-bottom: 8px;
+}
 
 .team-list--columns .team-link {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--rule);
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid var(--tile-edge);
+  border-radius: 8px;
+  background: var(--tile);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .team-link__code {
-  flex: 0 0 2.3em;
+  flex: 0 0 30px;
   color: var(--accent);
-  font: 600 15px/1 var(--display);
+  font: 600 14px/1 var(--display);
   letter-spacing: 0.04em;
+}
+
+/* Long names ("Crystal Palace", "Brighton Hove") wrap at the space inside the tile on narrow
+   phones. overflow-wrap is only a last resort, so a name never spills out of its tile. */
+.team-list--columns .team-link__name {
+  min-width: 0;
+  color: var(--ink);
+  font: 400 16px/1.2 var(--serif);
+  overflow-wrap: break-word;
+}
+
+/* Below 390px a tile leaves the name 96–103px, and "Bournemouth" needs 106px at 16px. */
+@media (max-width: 389px) {
+  .team-list--columns .team-link__name { font-size: 14px; }
+}
+
+/* Mouse only, so a phone never keeps a stuck hover colour after a tap. */
+@media (hover: hover) and (pointer: fine) {
+  .team-list--columns .team-link:hover {
+    background: var(--tile-hover);
+    border-color: var(--tile-hover);
+  }
+
+  .team-list--columns .team-link:hover .team-link__code,
+  .team-list--columns .team-link:hover .team-link__name { color: var(--card); }
+}
+
+/* After the hover rules, so a press wins over hover. iPhone Safari needs app.js's touchstart
+   listener to show it. */
+.team-list--columns .team-link:active {
+  background: var(--tile-pressed);
+  border-color: var(--tile-pressed);
+  box-shadow: inset 0 2px 4px rgba(29, 27, 23, 0.35); /* --ink at 35%, for browsers without color-mix */
+  box-shadow: inset 0 2px 4px color-mix(in srgb, var(--ink) 35%, transparent);
+}
+
+.team-list--columns .team-link:active .team-link__code,
+.team-list--columns .team-link:active .team-link__name { color: var(--card); }
+
+.team-list--columns .team-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ---------------------------------------------------------------- team view */
