@@ -1,4 +1,4 @@
-// Matchday Briefing frontend (SPEC.md §4): ?team= routing, rendering and localStorage recents.
+// Ludicrous Display frontend (SPEC.md §4): ?team= routing, rendering and localStorage recents.
 // Reads Supabase's REST API with plain fetch and the publishable key from config.js; it never calls
 // football-data.org. Comment text and notes are model output, so they are only ever set with
 // textContent, never innerHTML.
@@ -16,6 +16,11 @@
   // Fixed English labels, as in scripts/lib/match-data.js: Intl's en-GB output abbreviates September as "Sept".
   const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // Stroke icons for the thumbs buttons: Lucide's thumbs-up and thumbs-down (ISC licence), 24×24.
+  const THUMB_PATHS = {
+    up: ['M7 10v12', 'M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z'],
+    down: ['M17 14V2', 'M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z'],
+  };
 
   const main = document.getElementById('main');
   const toastEl = document.getElementById('toast');
@@ -56,7 +61,7 @@
 
   // Every team, so a recent or linked team that has left the league still resolves; the picker
   // shows only in_current_season rows.
-  const TEAMS_QUERY = 'teams?select=id,short_name,slug,in_current_season&order=short_name.asc,id.asc';
+  const TEAMS_QUERY = 'teams?select=id,short_name,tla,slug,in_current_season&order=short_name.asc,id.asc';
 
   // The team's most recent finished match that has live comments for its perspective (or, with
   // matchId, that one match), with those comments as `own`. !inner drops matches with none.
@@ -114,6 +119,20 @@
     return node;
   }
 
+  function thumbIcon(reaction) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    for (const d of THUMB_PATHS[reaction]) {
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
   function teamHref(slug) {
     return `?team=${encodeURIComponent(slug)}`;
   }
@@ -151,9 +170,14 @@
     }
   }
 
+  // Team views get the compact masthead. So do loading and error pages opened with ?team=, so a team
+  // link doesn't flash the full masthead first.
   function render(state, title, nodes) {
-    document.title = title ? `${title} · Matchday Briefing` : 'Matchday Briefing';
+    document.title = title ? `${title} · Ludicrous Display` : 'Ludicrous Display';
     main.replaceChildren(...nodes.filter(Boolean));
+    const teamUrl = Boolean(new URLSearchParams(location.search).get('team'));
+    const compact = state === 'team' || state === 'no-briefing' || ((state === 'loading' || state === 'error') && teamUrl);
+    document.body.dataset.masthead = compact ? 'compact' : 'full';
     document.body.dataset.state = state;
   }
 
@@ -163,9 +187,12 @@
 
   // ---------------------------------------------------------------- views
 
-  function teamList(teams, label) {
-    return el('ul', { class: 'team-list', 'aria-label': label },
-      teams.map((team) => el('li', {}, el('a', { class: 'team-link', href: teamHref(team.slug), dataset: { slug: team.slug }, text: team.short_name }))));
+  // layout: 'pills' (Recent) or 'columns' (every team, each with its three-letter code).
+  function teamList(teams, label, layout) {
+    return el('ul', { class: `team-list team-list--${layout}`, 'aria-label': label },
+      teams.map((team) => el('li', {}, el('a', { class: 'team-link', href: teamHref(team.slug), dataset: { slug: team.slug } },
+        layout === 'columns' && team.tla && el('span', { class: 'team-link__code', 'aria-hidden': 'true', text: team.tla }),
+        el('span', { class: 'team-link__name', text: team.short_name })))));
   }
 
   function renderHome(teams, unknownSlug) {
@@ -179,11 +206,11 @@
       el('p', { class: 'intro', text: 'Pick a team for a few lines to say about their last match: the score, a bit of chat and some strong opinions.' }),
       recents.length > 0 && el('section', { class: 'picker picker--recent', 'aria-labelledby': 'recent-heading' },
         el('h2', { id: 'recent-heading', text: 'Recent' }),
-        teamList(recents, 'Recent teams')),
+        teamList(recents, 'Recent teams', 'pills')),
       el('section', { class: 'picker', id: 'picker', 'aria-labelledby': 'picker-heading' },
         el('h2', { id: 'picker-heading', text: 'Premier League teams' }),
         current.length > 0
-          ? teamList(current, 'Premier League teams')
+          ? teamList(current, 'Premier League teams', 'columns')
           : el('p', { class: 'status', text: 'No teams yet. Check back soon.' })),
     ]);
   }
@@ -209,12 +236,14 @@
       COMPETITION_NAMES[match.competition] || match.competition,
     ].filter(Boolean).join(' · ');
 
+    const dateLabelEl = el('p', { class: 'match__label', text: `${pinned ? 'Match' : 'Last match'}: ${dateLabel(match.kickoff_at)}` });
+    // One row per team, home first; the page's own team is picked out in the accent colour.
+    const scoreRow = (teamId, goals) => el('p', { class: `match__row${teamId === team.id ? ' match__row--own' : ''}` },
+      el('span', { class: 'match__team', text: name(teamId) }),
+      el('span', { class: 'match__goals', text: String(goals) }));
     const matchCard = el('section', { class: 'match', 'aria-label': 'Match' },
-      el('p', { class: 'match__label', text: `${pinned ? 'Match' : 'Last match'}: ${dateLabel(match.kickoff_at)}` }),
-      el('p', { class: 'match__score' },
-        el('span', { class: 'match__team', text: name(match.home_team_id) }),
-        el('span', { class: 'match__goals', text: `${match.home_score}–${match.away_score}` }),
-        el('span', { class: 'match__team match__team--away', text: name(match.away_team_id) })),
+      scoreRow(match.home_team_id, match.home_score),
+      scoreRow(match.away_team_id, match.away_score),
       el('p', { class: 'match__meta', text: meta }));
 
     // Only when the other side has live comments for this same match.
@@ -226,7 +255,7 @@
     });
 
     render('team', team.short_name, [
-      backLink, heading, offlineNotice(), matchCard, opponentLink,
+      backLink, dateLabelEl, heading, offlineNotice(), matchCard, opponentLink,
       el('ol', { class: 'cards', 'aria-label': 'Talking points' }, match.own.map(commentCard)),
     ]);
   }
@@ -241,8 +270,7 @@
       'aria-label': reaction === 'up' ? 'Thumbs up' : 'Thumbs down',
       'aria-pressed': 'false',
       dataset: { reaction },
-      text: reaction === 'up' ? '👍' : '👎',
-    }));
+    }, thumbIcon(reaction)));
     for (const button of thumbs) {
       button.addEventListener('click', () => {
         const pressed = button.getAttribute('aria-pressed') !== 'true';
@@ -255,7 +283,7 @@
       el('p', { class: 'card__text', text: comment.text }),
       el('p', { class: 'card__note', text: comment.note }),
       el('div', { class: 'card__actions' },
-        el('button', { type: 'button', class: 'copy', onclick: () => copyLine(comment.text), text: 'Copy' }),
+        el('button', { type: 'button', class: 'copy', onclick: () => copyLine(comment.text), text: 'Copy line' }),
         el('span', { class: 'thumbs', role: 'group', 'aria-label': 'Rate this line' }, thumbs)));
   }
 
@@ -290,7 +318,7 @@
       const [match] = pinned ? [pinned] : await rest(briefingQuery(team.id));
       renderTeam(team, match || null, new Map(teams.map((t) => [t.id, t])), Boolean(pinned));
     } catch (err) {
-      console.error('Matchday Briefing:', err);
+      console.error('Ludicrous Display:', err);
       renderError();
     }
   }

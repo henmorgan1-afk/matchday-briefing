@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
 
 ## How this document is used
 
@@ -229,7 +229,7 @@ Decisions made while building P2. They include four changes the project owner as
 1. **Thumbs stay on the page until P4.** §4 says a thumbs tap writes to `feedback`, but §7 puts thumbs writes in P4, and P2 was built without starting P4. Each card has thumbs up and down buttons that toggle a pressed state (`aria-pressed`) on the page only. There is no `feedback` write, no `deviceId` and no "You're offline — reaction not saved" toast yet. P4 adds all three to `app.js`.
 2. **P2 reads Supabase live.** §7 lists "wire frontend to live Supabase reads" under P3. But §4's picker and briefings, and `check-p2`, need live reads, so P2 does them. That leaves P3 with what `check-p3.js` asserts: identical comments across browsers, and pipeline idempotency. `check-p3.js` and `verify.js` are not built.
 3. **Palette and manifest.**
-   - The manifest's `theme_color` `#1F5C39` and `background_color` `#F4EFE3` are also the site's two palette tokens (`--colour-pitch` and `--colour-paper` in `style.css`). Every other colour is mixed from them.
+   - *(Updated in Revision 10.)* `style.css` defines six colour tokens, and no other colour appears in it: `--paper` `#F2EADB` (page), `--ink` `#1D1B17` (text, rules, the Copy button), `--accent` `#8A3A1C`, `--muted` `#5A5348` (labels, notes, footer), `--rule` `#CDBFA6` (hairlines) and `--card` `#F8F2E6` (the match card). The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, are all `--paper`, `#F2EADB`. *(It was `#1F5C39` and `#F4EFE3` in the P2 build, the two tokens every other colour was mixed from.)*
    - There's no dark mode, because it would need a second palette that the manifest's colours wouldn't match.
    - `id`, `start_url` and `scope` are `/`. The three icons in `frontend/icons/` are used unchanged, with the maskable one marked `purpose: maskable`.
    - Chrome reports no manifest or installability errors.
@@ -518,6 +518,41 @@ Implementation notes for the third round:
   - **Next step:** after matchday 6, write up the options using its real run times. One option is an outside service that calls the workflow's manual trigger (`workflow_dispatch`) every hour. It needs a GitHub access token stored outside GitHub.
 
 **Stage 1 is done when** both checks pass on a matchday-6 match with player data (10–12 Oct), and the project owner has read that match's dry-run lines.
+
+### Revision 10 (7 Oct 2026, frontend restyle: design direction A, "Matchday programme")
+
+The project owner chose design direction A, a printed matchday programme look, and renamed what users see. The work is on branch `redesign-programme`. Only `frontend/` and this file change; the pipeline is untouched. Revision 8 item 3 and §4's "Installed look" line are updated to match. Where anything else in §4 or Revision 8 differs on looks, this note takes precedence. Every behaviour is unchanged: card order, the "Last match:" and "Match:" labels, the opposition link rule, Copy, thumbs, Recent, `?match=`, the service worker and the offline cache. Model text still goes in with `textContent`.
+
+1. **Naming.**
+   - The page heading, on every page, is "Did you see that *ludicrous* display last night?", with "ludicrous" in an `<em>`. "Matchday Briefing" no longer appears anywhere a user sees it.
+   - The tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page.
+   - The manifest's `name` is "Ludicrous Display" and its `short_name` "Ludicrous". `apple-mobile-web-app-title` is "Ludicrous".
+2. **Colours.** Six tokens in `style.css`, and no other colour anywhere in it (Revision 8 item 3 lists them). The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, are `#F2EADB`.
+3. **Fonts.**
+   - Oswald 500, 600 and 700 for headings, labels and buttons, falling back to Arial Narrow, then sans-serif.
+   - Source Serif 4 400 and 600, roman and italic, for body text, the lines and "ludicrous", falling back to Georgia.
+   - Both are self-hosted as `woff2` files in `frontend/fonts/`, under the SIL Open Font License (`frontend/fonts/OFL.txt`). The files are Fontsource's static builds. Oswald has the latin subset only, since everything set in it is ASCII. Source Serif 4 also has latin-ext, picked by `unicode-range`, because the lines can name players such as Šeško.
+   - All 11 font files are in `sw.js`'s precache list. Nothing is requested from Google Fonts.
+4. **Home page.**
+   - Masthead: a 3px ink rule on top and a 4px double ink rule below. A small row reads "Premier League" on the left and "Talking points" on the right. The heading is Oswald 700, 36px, uppercase, with "ludicrous" on its own line in Source Serif 4 italic 600, 66px, lowercase, in the accent colour.
+   - Intro in Source Serif 4, 18px. Section headings ("Recent", "Premier League teams") in Oswald 600, 14px, uppercase, each followed by a 1px ink rule that fills the rest of the line.
+   - Recent is a row of pill buttons, at least 44px tall.
+   - The team list is two columns, filled top to bottom and then left to right. Each row is at least 46px tall, has a hairline underneath, and shows the team's three-letter code (`teams.tla`, in the accent colour) before its name. The code is `aria-hidden`, so a screen reader reads only the name.
+   - The footer has a 4px double ink rule above it.
+5. **Team page.**
+   - A compact masthead: the heading on one or two lines, then "← All teams". Loading and error pages opened with `?team=` also get it, so a team link doesn't flash the full masthead first (`body[data-masthead]`).
+   - The "Last match: …" or "Match: …" label now sits above the team name (Oswald 700, 52px) rather than inside the match card.
+   - The match card has a 4px double ink border. It has one row per team, home first, each with the name and that team's score; the page's own team is in the accent colour. Half-time score, matchday and competition sit under a hairline.
+   - Comment cards have no boxes and are separated by hairlines. Each type tag is followed by a rule that fills the line: HOT TAKE in the accent colour with a 2px rule, BANTER in muted and STAT in ink, each with a 1px rule.
+   - The Copy button now reads "Copy line". The thumbs are 44px square buttons with stroke icons (Lucide's, ISC licence) instead of emoji. They still toggle `aria-pressed`, and a pressed thumb is filled ink.
+   - "No briefing yet", "We don't know that team", the offline banner, the error state and its "Try again" button, and the toast are restyled to match.
+6. **Data read.** The `teams` read now selects `tla` too, for the codes. The anon role can already read every `teams` column. The read's URL changes, but offline use still works: a tester gets the new `app.js` only on an online visit, and that visit caches the new read.
+
+**Findings** (7 Oct 2026).
+- `check-p2.js --base http://localhost:8080` passes unchanged. It covers 20 picker entries and 20 team pages (8 briefings, 12 "No briefing yet"), with no console errors. Copy and thumbs work, the opposition link and all four `?match=` fallbacks work, and Recent is unchanged. It also covers the unknown slug, the manifest, `sw.js`, secrets across 21 frontend files, and the offline reload.
+- At 390px wide, neither the home page nor the Sunderland page scrolls sideways, and all six font styles the pages use load from `fonts/`.
+- Phone-width screenshots are in `review/` (gitignored, so local only): `redesign-home-390.png` and `redesign-sunderland-390.png` (full page), plus `-fold` versions of each showing only the first screen.
+- The app icons in `frontend/icons/` are unchanged, so they're still the P2 dark green and cream. They don't match the new palette. Redrawing them is left for a later decision.
 
 ## 1. Architecture
 
@@ -1169,7 +1204,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 - **Existing mock-up:** the look-and-feel prototype published earlier on claude.ai is a visual reference only. Its sample lines include scorers, specific incidents and match-specific banter that §3.3 now forbids, so don't copy its content or show it to testers as representative of real output.
 - No ad space is reserved anywhere in this layout; ad placement is designed when V1 actually implements ads.
 - **Install:** on Android/Chrome, the browser's own "Install app" prompt is enough — no custom install banner in this build. The homepage footer carries one line of help for iOS testers ("On iPhone: Share → Add to Home Screen"), since iOS has no install prompt.
-- **Installed look:** `display: standalone`, theme and background colours taken from the frontend's own palette tokens, app name "Matchday Briefing", short name "Matchday". Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
+- **Installed look:** `display: standalone`, theme and background colours both `#F2EADB` (the page colour, `--paper`), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
 
 ## 5. Testers (P4)
 

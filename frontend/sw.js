@@ -21,6 +21,17 @@ const SHELL_FILES = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
+  'fonts/oswald-latin-500-normal.woff2',
+  'fonts/oswald-latin-600-normal.woff2',
+  'fonts/oswald-latin-700-normal.woff2',
+  'fonts/source-serif-4-latin-400-normal.woff2',
+  'fonts/source-serif-4-latin-600-normal.woff2',
+  'fonts/source-serif-4-latin-400-italic.woff2',
+  'fonts/source-serif-4-latin-600-italic.woff2',
+  'fonts/source-serif-4-latin-ext-400-normal.woff2',
+  'fonts/source-serif-4-latin-ext-600-normal.woff2',
+  'fonts/source-serif-4-latin-ext-400-italic.woff2',
+  'fonts/source-serif-4-latin-ext-600-italic.woff2',
 ];
 
 self.addEventListener('install', (event) => {
