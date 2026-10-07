@@ -554,6 +554,25 @@ The project owner chose design direction A, a printed matchday programme look, a
 - Phone-width screenshots are in `review/` (gitignored, so local only): `redesign-home-390.png` and `redesign-sunderland-390.png` (full page), plus `-fold` versions of each showing only the first screen.
 - The app icons in `frontend/icons/` are unchanged, so they're still the P2 dark green and cream. They don't match the new palette. Redrawing them is left for a later decision.
 
+### Revision 11 (7 Oct 2026, team tiles)
+
+The project owner found that the home page team list didn't look tappable on a phone. Each team in "Premier League teams" is now a filled tile. This is a look-only change on branch `team-tiles`; Recent, the team pages and the pipeline are unchanged.
+
+1. **Tiles.**
+   - The list is still two columns in alphabetical order, down the left column and then down the right, with 12px between the columns and 8px between rows. The hairlines between teams are gone.
+   - Each tile is 48px tall or more, with rounded corners. The three-letter code sits in a 30px-wide slot and is still hidden from screen readers; the name follows it.
+   - Long names wrap onto a second line inside the tile.
+2. **Colours.** Four tile tokens join Revision 10's six: `--tile` `#E2D6C5`, `--tile-edge` `#D6C8B6`, `--tile-hover` `#86664B` and `--tile-pressed` `#684D39`. On hover and press the name and code turn `--card`. The pressed shadow is `--ink` at 35%, written with `color-mix` so no colour is written outside the tokens.
+3. **States.**
+   - Hover applies only inside `@media (hover: hover) and (pointer: fine)`, so a phone never keeps a stuck hover colour.
+   - Pressed (`:active`) has a darker fill and an inset shadow. iPhone Safari applies `:active` only when a `touchstart` listener exists, so `app.js` adds an empty passive one.
+   - Keyboard focus shows a 2px accent outline. The tiles turn off the phone's own tap flash.
+4. **Findings** (7 Oct 2026).
+   - `check-p2.js --base http://localhost:8080` passes.
+   - No name spills out of its tile at 360px or 390px wide, and neither page scrolls sideways.
+   - At 360px a tile leaves 96px for the name. "Bournemouth" needs 106px at 16px, so it can't fit on one line, and Chromium on Windows breaks it as "Bournemou / th". The name has `hyphens: auto`, so browsers with an English hyphenation dictionary should show "Bourne-mouth". iOS Safari and Chrome on Android have one, but that isn't tested yet. Every other name either fits or wraps at a space. At 390px every name fits on one line.
+   - Screenshots, in `review/` (local only): `tiles-home-360x800.png`, `tiles-home-390x844.png`, `tiles-hover-1280x800.png` and `tiles-pressed-390x844.png`.
+
 ## 1. Architecture
 
 ```
