@@ -201,7 +201,7 @@
     mac: 'Press ⌘+D to bookmark this page.',
     desktop: 'Press Ctrl+D to bookmark this page.',
   };
-  const DESKTOP_INSTALL_TIP = "Use the install icon at the right of the address bar, or your browser's menu.";
+  const DESKTOP_INSTALL_TIP = "Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it.";
   const INSTALL_TIPS = {
     android: 'Tap ⋮ at the top right, then "Install app".',
     ios: 'Tap Share, then "Add to Home Screen".',

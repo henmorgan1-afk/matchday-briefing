@@ -685,7 +685,7 @@ The project owner replaced Revision 13's single install button with a pair: Book
    - With no saved event, a tap shows a tip:
      - iOS: Tap Share, then "Add to Home Screen".
      - Android: Tap ⋮ at the top right, then "Install app".
-     - Desktop, Mac included: Use the install icon at the right of the address bar, or your browser's menu.
+     - Desktop, Mac included: Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it. *(Changed in the follow-up below, so the tip also helps on desktop browsers that can't install a web app.)*
    - `appinstalled` hides the whole area.
    - "Hidden after install" lasts for that page load only; nothing is stored. A tester who installs and then keeps using the browser tab sees the pair again on their next visit there, and Install web app then shows the tip. A stored flag would hide it for good, even after they removed the app ("Remove any time").
 6. **Where it shows.** Only on the pages with the team list: `body[data-state]` of `home` or `unknown-team`. It never shows on team, loading or error pages, or when running installed (`display-mode: standalone`, or `navigator.standalone === true`), as in Revision 13.
@@ -700,7 +700,7 @@ The project owner replaced Revision 13's single install button with a pair: Book
    - the unknown-team page shows the area. A team page doesn't, even with a saved event. With an iPhone user agent, a team page shows the footer's iPhone line;
    - with `display-mode: standalone` (Android) or `navigator.standalone` (iPhone) stubbed, there's no area and the footer line shows;
    - at 360px and 390px wide, each button is under 56px tall, so one line, and its label isn't wider than the button. The two buttons sit on the same row, side by side, and the page doesn't scroll sideways.
-   - A button the check can't tap is reported as a failure within 3 seconds, rather than stopping the whole run on Playwright's 30-second timeout.
+   - Every wait in the install step gives up after 3 seconds. That covers each tap, each tip, the area hiding after an accepted prompt, `prompt()` being called after a dismissed one, and the fonts loading before the width check. Each failure message names the element and what was expected, plus what was found where that helps, for example: `next tap after a dismissal: gave up after 3 s waiting to tap #install-button (expected it visible and enabled)`. The reassurance text is read directly, with no wait. A broken page therefore fails in seconds, rather than on Playwright's 30-second default, which also stopped the whole run. The info line prints how long the install step took. Loading each page still allows `visit()`'s 20 seconds, as every other step does, because that wait covers the Supabase reads.
 9. **Findings** (8 Oct 2026).
    - `check-p2.js --base http://localhost:8080` passes, with the new install step and everything from before: 20 picker entries, 20 team pages (8 briefings, 12 "No briefing yet"), no console errors, and secrets checked across 24 frontend files. The buttons measure 158 + 158px at 360px and 173 + 173px at 390px, all 48px tall.
    - A deliberately broken copy, with the label "Install app" and `app.js` hiding the area after a *dismissed* prompt, failed with 4 problems:
@@ -711,8 +711,23 @@ The project owner replaced Revision 13's single install button with a pair: Book
 
      The first run against it showed that a hidden button made the check stop on Playwright's 30-second click timeout instead of reporting a failure. That's the 3-second rule in item 8.
    - Chromium reports the 1.5px borders as 1px (`getComputedStyle`), as it does for Revision 11's pills.
-   - On desktop browsers that can't install a web app at all, such as Firefox, the desktop install tip ("…or your browser's menu") has nothing to point at. That's left as it is for now.
-   - Screenshots, in `review/` (local only), scrolled to the bottom: `install-pair-390.png` and `install-pair-360.png` (Android), `install-pair-tip-iphone.png` (iPhone at 390px, after tapping Install web app) and `install-pair-desktop.png` (Windows at 1280px, after tapping Bookmark).
+   - Screenshots, in `review/` (local only), scrolled to the bottom: `install-pair-390.png` and `install-pair-360.png` (Android), `install-pair-tip-iphone.png` (iPhone at 390px, after tapping Install web app) and `install-pair-desktop.png` (Windows at 1280px; see the follow-up).
+10. **Follow-up** (8 Oct 2026, same branch).
+    - **Desktop install tip.** It now reads "Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it." The old tip had nothing to point at on desktop browsers that can't install a web app, such as Firefox. The new one tells those testers which browsers can. At the tip line's 320px it wraps onto 3 lines. `check-p2.js` expects the new text for Windows and Mac.
+    - **Install-step waits.** The first build only gave taps the 3-second limit. Three waits could still be slow or unclear:
+      - the reassurance text read through Playwright, which could wait 30 seconds for a missing element;
+      - a 5-second wait for the area to hide;
+      - waits that gave up silently and left the failure to a later, vaguer message.
+
+      All now follow item 8's 3-second rule.
+    - `check-p2.js --base http://localhost:8080` passes, and the install step takes about 4.7 seconds.
+    - The same deliberately broken copy (the "Install app" label, and the area hidden after a dismissal) now fails with 3 clear problems:
+      - `#install-button reads "Install app", expected "Install web app"`;
+      - `dismissed prompt: #bookmark-button and #install-button hid, expected both to stay visible`;
+      - `next tap after a dismissal: gave up after 3 s waiting to tap #install-button (expected it visible and enabled)`.
+
+      The install step took 7.3 seconds against 4.7 when passing, so the failure cost one 3-second wait. Before, it hung for 30 seconds and then stopped the run.
+    - `install-pair-desktop.png` is retaken after tapping Install web app, showing the new tip.
 
 ## 1. Architecture
 

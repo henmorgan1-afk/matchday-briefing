@@ -455,8 +455,8 @@ const BOOKMARK_TIPS = {
 const INSTALL_TIPS = {
   android: 'Tap ⋮ at the top right, then "Install app".',
   iphone: 'Tap Share, then "Add to Home Screen".',
-  windows: "Use the install icon at the right of the address bar, or your browser's menu.",
-  mac: "Use the install icon at the right of the address bar, or your browser's menu.",
+  windows: "Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it.",
+  mac: "Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it.",
 };
 const REASSURANCE = 'Free · No app store · Remove any time';
 
@@ -479,30 +479,46 @@ const installState = (page) => page.evaluate(() => {
   };
 });
 
-// Taps a button, failing (instead of waiting Playwright's 30 s) when it can't be tapped.
+// Every install-step wait gives up after 3 s with a failure naming the element and what it expected,
+// so a broken page fails fast rather than on Playwright's 30 s default, which stops the whole run.
+const INSTALL_WAIT_MS = 3_000;
+const WAITED = `gave up after ${INSTALL_WAIT_MS / 1000} s waiting`;
+
 async function tap(page, id, label) {
   try {
-    await page.locator(`#${id}`).click({ timeout: 3_000 });
+    await page.locator(`#${id}`).click({ timeout: INSTALL_WAIT_MS });
     return true;
   } catch {
-    fail(`install: ${label}: #${id} could not be tapped (not visible)`);
+    fail(`install: ${label}: ${WAITED} to tap #${id} (expected it visible and enabled)`);
     return false;
   }
 }
 
-// Taps a button and returns the tip line's text once it matches (or whatever it shows after 3 s;
-// null while it's hidden, undefined when the tap failed). app.js fills the line a frame after
+// Waits for fn(arg) to be true in the page. On timeout it fails with `what`, plus what `found()`
+// reports, and returns false.
+async function waitInPage(page, label, what, fn, arg, found) {
+  try {
+    await page.waitForFunction(fn, arg, { timeout: INSTALL_WAIT_MS });
+    return true;
+  } catch {
+    fail(`install: ${label}: ${WAITED} for ${what}${found ? `; found ${await found()}` : ''}`);
+    return false;
+  }
+}
+
+const tipNow = (page) => page.evaluate(() => {
+  const tip = document.getElementById('install-tip');
+  return tip.checkVisibility() ? JSON.stringify(tip.textContent) : 'the tip line hidden';
+});
+
+// Taps a button, then waits for the tip line to read `expected`. app.js fills the line a frame after
 // unhiding it.
-async function tipAfterTap(page, id, expected) {
-  if (!await tap(page, id, `tapping for "${expected}"`)) return undefined;
-  await page.waitForFunction((want) => {
+async function expectTip(page, label, id, expected) {
+  if (!await tap(page, id, label)) return false;
+  return waitInPage(page, label, `#install-tip to read "${expected}"`, (want) => {
     const tip = document.getElementById('install-tip');
     return !tip.hidden && tip.textContent === want;
-  }, expected, { timeout: 3_000 }).catch(() => {});
-  return page.evaluate(() => {
-    const tip = document.getElementById('install-tip');
-    return tip.checkVisibility() ? tip.textContent : null;
-  });
+  }, expected, () => tipNow(page));
 }
 
 // Returns whether app.js called preventDefault() on it.
@@ -529,6 +545,7 @@ async function withInstallPage(browser, device, url, label, fn, width) {
 }
 
 async function checkInstall(browser, base, teamSlug) {
+  const started = Date.now();
   // The served HTML hides the area and the tip itself, so nothing flashes before app.js runs.
   const html = await (await fetch(`${base}/`)).text();
   for (const id of ['install', 'install-tip']) {
@@ -554,8 +571,11 @@ async function checkInstall(browser, base, teamSlug) {
       if (c.label !== want[c.id]) fail(`install: #${c.id} reads "${c.label}", expected "${want[c.id]}"`);
       if (!c.button) fail(`install: #${c.id} is not a <button type="button">`);
     }
-    const reassure = (await page.locator('#install .install__reassure').textContent().catch(() => '')).trim();
-    if (reassure !== REASSURANCE) fail(`install: the reassurance line reads "${reassure}", expected "${REASSURANCE}"`);
+    const reassure = await page.evaluate(() => {
+      const line = document.querySelector('#install .install__reassure');
+      return line ? line.textContent.trim() : null;
+    });
+    if (reassure !== REASSURANCE) fail(`install: the reassurance line (#install .install__reassure) reads ${JSON.stringify(reassure)}, expected "${REASSURANCE}"`);
   });
 
   // 2. Each device's tips, with no saved event: Bookmark first, then Install web app, whose tip must
@@ -563,36 +583,35 @@ async function checkInstall(browser, base, teamSlug) {
   for (const device of Object.keys(INSTALL_UAS)) {
     await withInstallPage(browser, device, home, `install (${device} tips)`, async (page) => {
       if (!(await installState(page)).area) fail(`install: the install area is not visible on the home page with a ${device} user agent`);
-      const bookmark = await tipAfterTap(page, 'bookmark-button', BOOKMARK_TIPS[device]);
-      if (bookmark !== BOOKMARK_TIPS[device]) fail(`install: Bookmark on ${device} shows ${JSON.stringify(bookmark)}, expected "${BOOKMARK_TIPS[device]}"`);
-      const install = await tipAfterTap(page, 'install-button', INSTALL_TIPS[device]);
-      if (install !== INSTALL_TIPS[device]) fail(`install: Install web app on ${device} with no saved event shows ${JSON.stringify(install)}, expected "${INSTALL_TIPS[device]}"`);
+      await expectTip(page, `Bookmark on ${device}`, 'bookmark-button', BOOKMARK_TIPS[device]);
+      await expectTip(page, `Install web app on ${device} with no saved event`, 'install-button', INSTALL_TIPS[device]);
     });
   }
 
   // 3. A saved event, accepted: prompt() once, then the area hides and the footer line comes back.
   await withInstallPage(browser, 'android', home, 'install (accepted)', async (page) => {
     if (!await fakeInstallPrompt(page, 'accepted')) fail('install: app.js did not call preventDefault() on beforeinstallprompt');
-    await tap(page, 'install-button', 'accepted prompt');
-    await page.locator('#install').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    if (await tap(page, 'install-button', 'accepted prompt')) {
+      await waitInPage(page, 'accepted prompt', '#install to be hidden after the prompt was accepted',
+        () => !document.getElementById('install').checkVisibility(), null, () => Promise.resolve('#install still visible'));
+    }
     const calls = await promptCalls(page);
     if (calls !== 1) fail(`install: Install web app with a saved event called prompt() ${calls} times, expected 1`);
-    const s = await installState(page);
-    if (s.area) fail('install: the install area is still visible after the prompt was accepted');
-    if (!s.footer) fail("install: the footer's iPhone line didn't come back after the install area hid");
+    if (!(await installState(page)).footer) fail("install: the footer's iPhone line (#footer-iphone) didn't come back after the install area hid");
   });
 
   // 4. A saved event, dismissed: the buttons stay, and the next tap shows the tip, not prompt() again.
   await withInstallPage(browser, 'android', home, 'install (dismissed)', async (page) => {
     await fakeInstallPrompt(page, 'dismissed');
-    await tap(page, 'install-button', 'dismissed prompt');
-    await page.waitForFunction(() => window.installPromptCalls === 1, null, { timeout: 3_000 }).catch(() => {});
+    if (await tap(page, 'install-button', 'dismissed prompt')) {
+      await waitInPage(page, 'dismissed prompt', 'tapping #install-button to call prompt() once',
+        () => window.installPromptCalls === 1, null, async () => `${await promptCalls(page)} calls`);
+    }
     await page.waitForTimeout(200); // let app.js read userChoice
     const s = await installState(page);
-    if (!s.bookmark || !s.install) fail('install: the buttons hid after the prompt was dismissed');
-    if (s.tip) fail('install: a tip showed alongside the browser prompt');
-    const tip = await tipAfterTap(page, 'install-button', INSTALL_TIPS.android);
-    if (tip !== INSTALL_TIPS.android) fail(`install: after a dismissal the next tap shows ${JSON.stringify(tip)}, expected the Android tip`);
+    if (!s.bookmark || !s.install) fail('install: dismissed prompt: #bookmark-button and #install-button hid, expected both to stay visible');
+    if (s.tip) fail('install: dismissed prompt: #install-tip showed alongside the browser prompt, expected it hidden');
+    await expectTip(page, 'next tap after a dismissal', 'install-button', INSTALL_TIPS.android);
     const calls = await promptCalls(page);
     if (calls !== 1) fail(`install: after a dismissal, prompt() was called ${calls} times in all, expected 1`);
   });
@@ -647,7 +666,8 @@ async function checkInstall(browser, base, teamSlug) {
   const sizes = [];
   for (const width of [360, 390]) {
     await withInstallPage(browser, 'android', home, `install (${width}px)`, async (page) => {
-      await page.evaluate(() => document.fonts.ready);
+      await waitInPage(page, `${width}px`, 'document.fonts to finish loading (the label widths depend on Oswald)',
+        () => document.fonts.status === 'loaded', null, () => page.evaluate(() => `document.fonts.status "${document.fonts.status}"`));
       const m = await page.evaluate(() => {
         const box = (id) => {
           const b = document.getElementById(id);
@@ -668,7 +688,7 @@ async function checkInstall(browser, base, teamSlug) {
 
   info(`install: Bookmark + Install web app and the reassurance line show on load (footer iPhone line hidden); Bookmark and Install tips are right for ${Object.keys(INSTALL_UAS).join(', ')}; ` +
     `a saved event prompts once, hides the area when accepted and falls back to the tip after a dismissal; appinstalled hides it; shown on ?team=${UNKNOWN_SLUG}, not on ?team=${teamSlug} or when installed; ` +
-    `one row of single-line buttons (${sizes.join('; ')})`);
+    `one row of single-line buttons (${sizes.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
 // ---------------------------------------------------------------- main
