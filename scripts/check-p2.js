@@ -444,7 +444,11 @@ const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleW
 const installShown = async (page) => ({
   button: await page.locator('#install-button').isVisible(),
   hint: await page.locator('#install-hint').isVisible(),
+  footer: await page.locator('#footer-iphone').isVisible(),
 });
+
+// Visible lines of iPhone install help anywhere on the page: the install line and the footer's.
+const iphoneLines = (page) => page.$$eval('body p', (ps) => ps.filter((p) => p.checkVisibility() && /^On iPhone:/.test(p.textContent.trim())).length);
 
 // Returns whether app.js called preventDefault() on it.
 const fakeInstallPrompt = (page) => page.evaluate(() => {
@@ -475,6 +479,7 @@ async function checkInstall(browser, base, teamSlug) {
     const afterEvent = await installShown(home.page);
     if (!afterEvent.button) fail('install: the "Add to home screen" button did not appear after beforeinstallprompt');
     if (afterEvent.hint) fail('install: the iPhone line shows on a non-iPhone browser');
+    if (!afterEvent.footer) fail("install: the footer's iPhone line is hidden on a non-iPhone home page");
     const label = (await home.page.locator('#install-button').innerText().catch(() => '')).trim();
     if (!/^add to home screen$/i.test(label)) fail(`install: the button reads "${label}", expected "Add to home screen"`);
     if (await home.page.locator('#install-button').evaluate((b) => b.tagName !== 'BUTTON' || b.type !== 'button')) fail('install: the install control is not a <button type="button">');
@@ -508,10 +513,15 @@ async function checkInstall(browser, base, teamSlug) {
     if (shown.button) fail('install: the button shows with an iPhone user agent');
     const hint = (await home.page.locator('#install-hint').innerText().catch(() => '')).trim();
     if (hint !== 'On iPhone: tap the Share button, then "Add to Home Screen".') fail(`install: the iPhone line reads "${hint}"`);
+    if (shown.footer) fail("install: the footer's iPhone line still shows next to the install line on the iPhone home page");
+    const homeLines = await iphoneLines(home.page);
+    if (homeLines !== 1) fail(`install: the iPhone home page shows ${homeLines} iPhone install lines, expected exactly 1`);
     await home.page.close();
 
     const team = await visit(iphone, `${base}/?team=${encodeURIComponent(teamSlug)}`);
-    if ((await installShown(team.page)).hint) fail(`install: ?team=${teamSlug} shows the iPhone line`);
+    const onTeam = await installShown(team.page);
+    if (onTeam.hint) fail(`install: ?team=${teamSlug} shows the iPhone line`);
+    if (!onTeam.footer) fail(`install: ?team=${teamSlug} with an iPhone user agent hides the footer's iPhone line`);
     await team.page.close();
   } finally {
     await iphone.close();
@@ -536,7 +546,7 @@ async function checkInstall(browser, base, teamSlug) {
     await standalone.close();
   }
   info(`install: hidden on load; the button appears after beforeinstallprompt, one tap calls prompt() once and hides it; not on ?team=${teamSlug}; ` +
-    'an iPhone user agent gets the Share line instead; nothing shows when running installed');
+    'an iPhone user agent gets the Share line instead, as the only iPhone line on the home page, and keeps the footer line on team pages; nothing shows when running installed');
 }
 
 // ---------------------------------------------------------------- main

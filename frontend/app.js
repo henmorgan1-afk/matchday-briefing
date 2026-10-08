@@ -27,6 +27,7 @@
   const installEl = document.getElementById('install');
   const installButton = document.getElementById('install-button');
   const installHint = document.getElementById('install-hint');
+  const footerIphone = document.getElementById('footer-iphone');
 
   // iPhone Safari only applies :active (the team tiles' pressed colour) when a touchstart listener exists.
   document.addEventListener('touchstart', () => {}, { passive: true });
@@ -207,6 +208,8 @@
     installButton.hidden = !showButton;
     installHint.hidden = !showHint;
     installEl.hidden = !showButton && !showHint;
+    // The footer's shorter iPhone line would only repeat it.
+    footerIphone.hidden = showHint;
   }
 
   window.addEventListener('beforeinstallprompt', (event) => {

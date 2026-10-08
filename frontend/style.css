@@ -561,7 +561,7 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
 /* Below the team list on the home page only. app.js shows the button (Chrome, Edge, Samsung
    Internet) or the iPhone line, never both, and neither in the installed app. */
 .install {
-  margin-top: 32px;
+  margin-top: 8px;
   margin-bottom: 24px;
   text-align: center;
 }
