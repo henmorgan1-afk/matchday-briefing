@@ -556,10 +556,10 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
   color: var(--paper);
 }
 
-/* ---------------------------------------------------------------- install (Revision 13) */
+/* ---------------------------------------------------------------- install (Revision 14) */
 
-/* Below the team list on the home page only. app.js shows the button (Chrome, Edge, Samsung
-   Internet) or the iPhone line, never both, and neither in the installed app. */
+/* Bookmark + Install web app, below the team list on the pages that show it. app.js hides the whole
+   area on other pages and in the installed app. */
 .install {
   margin-top: 8px;
   margin-bottom: 24px;
@@ -568,46 +568,65 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
 
 .install[hidden], .install [hidden] { display: none; }
 
-.install__button {
-  display: block;
-  width: 100%;
+.install__buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
   max-width: 360px;
-  min-height: 48px;
   margin: 0 auto;
-  padding: 0 16px;
-  border: none;
+}
+
+/* Install web app is the primary (brick) button; Bookmark is the outlined secondary one. Both have
+   the same 1.5px border, so they're the same size. Labels never wrap: at 360px wide each button is
+   158px and "INSTALL WEB APP" needs about 119px plus padding, so 15px fits at every phone width. */
+.install__button {
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1.5px solid var(--accent);
   border-radius: 8px;
   background: var(--accent);
   color: var(--card);
   font: 600 15px/1 var(--display);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .install__button:hover { background: var(--accent-pressed); }
+.install__button--secondary {
+  background: transparent;
+  color: var(--accent);
 }
 
-/* iPhone Safari needs app.js's touchstart listener to show it. */
-.install__button:active { background: var(--accent-pressed); }
+@media (hover: hover) and (pointer: fine) {
+  .install__button:hover { background: var(--accent-pressed); border-color: var(--accent-pressed); }
+  .install__button--secondary:hover { background: var(--tile); border-color: var(--accent); }
+}
+
+/* After the hover rules, so a press wins over hover. iPhone Safari needs app.js's touchstart
+   listener to show it. */
+.install__button:active { background: var(--accent-pressed); border-color: var(--accent-pressed); }
+.install__button--secondary:active { background: var(--tile); border-color: var(--accent); }
 
 .install__button:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
-.install__hint {
-  max-width: 320px;
-  margin: 0 auto;
+.install__reassure {
+  margin: 10px 0 0;
   color: var(--muted);
-  font: 400 15px/1.4 var(--serif);
-  text-align: center;
+  font: 400 14px/1.4 var(--serif);
 }
 
-/* At 320px the line wraps; this keeps the menu item's name together on the second line. */
-.install__step { white-space: nowrap; }
+.install__tip {
+  max-width: 320px;
+  margin: 10px auto 0;
+  color: var(--ink);
+  font: 400 15px/1.4 var(--serif);
+}
 
 /* ---------------------------------------------------------------- footer and toast */
 

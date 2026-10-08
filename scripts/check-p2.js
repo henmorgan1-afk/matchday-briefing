@@ -437,116 +437,238 @@ async function checkOffline(browser, base, slug, expectedIds) {
   }
 }
 
-// The install area (Revision 13). Headless Chromium never fires beforeinstallprompt itself, so the
-// check dispatches a fake one, with a prompt() that counts its calls and a userChoice of "accepted".
-const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1';
+// The install area (Revision 14): Bookmark + Install web app. Headless Chromium never fires
+// beforeinstallprompt itself, so the check dispatches a fake one, with a prompt() that counts its
+// calls and a userChoice with the outcome under test.
+const INSTALL_UAS = {
+  android: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+  iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1',
+  windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+  mac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+};
+const BOOKMARK_TIPS = {
+  android: 'Tap ⋮ at the top right, then the ☆ star.',
+  iphone: 'Tap Share, then "Add Bookmark".',
+  windows: 'Press Ctrl+D to bookmark this page.',
+  mac: 'Press ⌘+D to bookmark this page.',
+};
+const INSTALL_TIPS = {
+  android: 'Tap ⋮ at the top right, then "Install app".',
+  iphone: 'Tap Share, then "Add to Home Screen".',
+  windows: "Use the install icon at the right of the address bar, or your browser's menu.",
+  mac: "Use the install icon at the right of the address bar, or your browser's menu.",
+};
+const REASSURANCE = 'Free · No app store · Remove any time';
 
-const installShown = async (page) => ({
-  button: await page.locator('#install-button').isVisible(),
-  hint: await page.locator('#install-hint').isVisible(),
-  footer: await page.locator('#footer-iphone').isVisible(),
+// Phones get touch, so a Mac user agent with no touch points is a Mac and not an iPad.
+const installContext = (browser, device, width = 390) => browser.newContext({
+  userAgent: INSTALL_UAS[device],
+  viewport: { width, height: 844 },
+  ...(device === 'android' || device === 'iphone' ? { hasTouch: true, isMobile: true } : {}),
 });
 
-// Visible lines of iPhone install help anywhere on the page: the install line and the footer's.
-const iphoneLines = (page) => page.$$eval('body p', (ps) => ps.filter((p) => p.checkVisibility() && /^On iPhone:/.test(p.textContent.trim())).length);
+const installState = (page) => page.evaluate(() => {
+  const visible = (el) => Boolean(el && el.checkVisibility());
+  return {
+    area: visible(document.getElementById('install')),
+    bookmark: visible(document.getElementById('bookmark-button')),
+    install: visible(document.getElementById('install-button')),
+    reassure: visible(document.querySelector('#install .install__reassure')),
+    tip: visible(document.getElementById('install-tip')),
+    footer: visible(document.getElementById('footer-iphone')),
+  };
+});
+
+// Taps a button, failing (instead of waiting Playwright's 30 s) when it can't be tapped.
+async function tap(page, id, label) {
+  try {
+    await page.locator(`#${id}`).click({ timeout: 3_000 });
+    return true;
+  } catch {
+    fail(`install: ${label}: #${id} could not be tapped (not visible)`);
+    return false;
+  }
+}
+
+// Taps a button and returns the tip line's text once it matches (or whatever it shows after 3 s;
+// null while it's hidden, undefined when the tap failed). app.js fills the line a frame after
+// unhiding it.
+async function tipAfterTap(page, id, expected) {
+  if (!await tap(page, id, `tapping for "${expected}"`)) return undefined;
+  await page.waitForFunction((want) => {
+    const tip = document.getElementById('install-tip');
+    return !tip.hidden && tip.textContent === want;
+  }, expected, { timeout: 3_000 }).catch(() => {});
+  return page.evaluate(() => {
+    const tip = document.getElementById('install-tip');
+    return tip.checkVisibility() ? tip.textContent : null;
+  });
+}
 
 // Returns whether app.js called preventDefault() on it.
-const fakeInstallPrompt = (page) => page.evaluate(() => {
+const fakeInstallPrompt = (page, outcome) => page.evaluate((result) => {
   const event = new Event('beforeinstallprompt', { cancelable: true });
   window.installPromptCalls = 0;
   event.prompt = () => { window.installPromptCalls += 1; return Promise.resolve(); };
-  event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });
+  event.userChoice = Promise.resolve({ outcome: result, platform: 'web' });
   window.dispatchEvent(event);
   return event.defaultPrevented;
-});
+}, outcome);
 
-async function checkInstall(browser, base, teamSlug) {
-  // The served HTML hides the area itself, so nothing flashes before app.js runs.
-  const html = await (await fetch(`${base}/`)).text();
-  for (const id of ['install', 'install-button', 'install-hint']) {
-    const tag = (html.match(new RegExp(`<[a-z]+\\s[^>]*id="${id}"[^>]*>`)) || [])[0];
-    if (!tag || !/\shidden(?=[\s>])/.test(tag)) fail(`install: index.html's #${id} ${tag ? 'has no hidden attribute' : 'is missing'}`);
-  }
+const promptCalls = (page) => page.evaluate(() => window.installPromptCalls);
 
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+async function withInstallPage(browser, device, url, label, fn, width) {
+  const context = await installContext(browser, device, width);
   try {
-    // 1. Home page: hidden on load, shown by the event, and one tap prompts once and hides it.
-    const home = await visit(context, `${base}/`);
-    commonPageProblems('install (home)', home);
-    const onLoad = await installShown(home.page);
-    if (onLoad.button || onLoad.hint) fail(`install: on load the home page shows the ${onLoad.button ? 'button' : 'iPhone line'}, expected neither`);
-    if (!await fakeInstallPrompt(home.page)) fail('install: app.js did not call preventDefault() on beforeinstallprompt');
-    const afterEvent = await installShown(home.page);
-    if (!afterEvent.button) fail('install: the "Add to home screen" button did not appear after beforeinstallprompt');
-    if (afterEvent.hint) fail('install: the iPhone line shows on a non-iPhone browser');
-    if (!afterEvent.footer) fail("install: the footer's iPhone line is hidden on a non-iPhone home page");
-    const label = (await home.page.locator('#install-button').innerText().catch(() => '')).trim();
-    if (!/^add to home screen$/i.test(label)) fail(`install: the button reads "${label}", expected "Add to home screen"`);
-    if (await home.page.locator('#install-button').evaluate((b) => b.tagName !== 'BUTTON' || b.type !== 'button')) fail('install: the install control is not a <button type="button">');
-    if (afterEvent.button) {
-      await home.page.locator('#install-button').click();
-      await home.page.locator('#install-button').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
-      const calls = await home.page.evaluate(() => window.installPromptCalls);
-      if (calls !== 1) fail(`install: tapping the button called prompt() ${calls} times, expected 1`);
-      if (await home.page.locator('#install-button').isVisible()) fail('install: the button is still visible after the prompt was answered');
-    }
-    await home.page.close();
-
-    // 2. A team page never shows it.
-    const team = await visit(context, `${base}/?team=${encodeURIComponent(teamSlug)}`);
-    commonPageProblems(`install (?team=${teamSlug})`, team);
-    await fakeInstallPrompt(team.page);
-    const onTeam = await installShown(team.page);
-    if (onTeam.button || onTeam.hint) fail(`install: ?team=${teamSlug} shows the install ${onTeam.button ? 'button' : 'iPhone line'} after beforeinstallprompt`);
-    await team.page.close();
+    const v = await visit(context, url);
+    await fn(v.page);
+    commonPageProblems(label, v); // after the taps, so errors they cause count too
   } finally {
     await context.close();
   }
+}
 
-  // 3. iPhone: the line instead of the button, on the home page only, and neither in the installed app.
-  const iphone = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  try {
-    const home = await visit(iphone, `${base}/`);
-    commonPageProblems('install (iPhone home)', home);
-    const shown = await installShown(home.page);
-    if (!shown.hint) fail('install: the iPhone line is not visible on the home page with an iPhone user agent');
-    if (shown.button) fail('install: the button shows with an iPhone user agent');
-    const hint = (await home.page.locator('#install-hint').innerText().catch(() => '')).trim();
-    if (hint !== 'On iPhone: tap the Share button, then "Add to Home Screen".') fail(`install: the iPhone line reads "${hint}"`);
-    if (shown.footer) fail("install: the footer's iPhone line still shows next to the install line on the iPhone home page");
-    const homeLines = await iphoneLines(home.page);
-    if (homeLines !== 1) fail(`install: the iPhone home page shows ${homeLines} iPhone install lines, expected exactly 1`);
-    await home.page.close();
-
-    const team = await visit(iphone, `${base}/?team=${encodeURIComponent(teamSlug)}`);
-    const onTeam = await installShown(team.page);
-    if (onTeam.hint) fail(`install: ?team=${teamSlug} shows the iPhone line`);
-    if (!onTeam.footer) fail(`install: ?team=${teamSlug} with an iPhone user agent hides the footer's iPhone line`);
-    await team.page.close();
-  } finally {
-    await iphone.close();
+async function checkInstall(browser, base, teamSlug) {
+  // The served HTML hides the area and the tip itself, so nothing flashes before app.js runs.
+  const html = await (await fetch(`${base}/`)).text();
+  for (const id of ['install', 'install-tip']) {
+    const tag = (html.match(new RegExp(`<[a-z]+\\s[^>]*id="${id}"[^>]*>`)) || [])[0];
+    if (!tag || !/\shidden(?=[\s>])/.test(tag)) fail(`install: index.html's #${id} ${tag ? 'has no hidden attribute' : 'is missing'}`);
   }
+  const home = `${base}/`;
 
-  // 4. Running installed (navigator.standalone on iPhone, display-mode: standalone elsewhere): nothing shows.
-  const standalone = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 } });
-  try {
-    await standalone.addInitScript(() => {
-      Object.defineProperty(Navigator.prototype, 'standalone', { get: () => true, configurable: true });
-      const realMatchMedia = window.matchMedia.bind(window);
-      window.matchMedia = (query) => (/display-mode:\s*standalone/.test(query)
-        ? { ...realMatchMedia(query), matches: true, media: query }
-        : realMatchMedia(query));
+  // 1. Android home page on load: both buttons and the reassurance line, no tip, no footer iPhone line.
+  await withInstallPage(browser, 'android', home, 'install (Android home)', async (page) => {
+    const s = await installState(page);
+    for (const [key, name] of [['area', 'install area'], ['bookmark', 'Bookmark button'], ['install', 'Install web app button'], ['reassure', 'reassurance line']]) {
+      if (!s[key]) fail(`install: the ${name} is not visible on load (Android home page)`);
+    }
+    if (s.tip) fail('install: the tip line is visible on load');
+    if (s.footer) fail("install: the footer's iPhone line shows alongside the install area");
+    const controls = await page.evaluate(() => ['bookmark-button', 'install-button'].map((id) => {
+      const b = document.getElementById(id);
+      return { id, label: b.textContent.trim(), button: b.tagName === 'BUTTON' && b.type === 'button' };
+    }));
+    const want = { 'bookmark-button': 'Bookmark', 'install-button': 'Install web app' };
+    for (const c of controls) {
+      if (c.label !== want[c.id]) fail(`install: #${c.id} reads "${c.label}", expected "${want[c.id]}"`);
+      if (!c.button) fail(`install: #${c.id} is not a <button type="button">`);
+    }
+    const reassure = (await page.locator('#install .install__reassure').textContent().catch(() => '')).trim();
+    if (reassure !== REASSURANCE) fail(`install: the reassurance line reads "${reassure}", expected "${REASSURANCE}"`);
+  });
+
+  // 2. Each device's tips, with no saved event: Bookmark first, then Install web app, whose tip must
+  //    replace the Bookmark one.
+  for (const device of Object.keys(INSTALL_UAS)) {
+    await withInstallPage(browser, device, home, `install (${device} tips)`, async (page) => {
+      if (!(await installState(page)).area) fail(`install: the install area is not visible on the home page with a ${device} user agent`);
+      const bookmark = await tipAfterTap(page, 'bookmark-button', BOOKMARK_TIPS[device]);
+      if (bookmark !== BOOKMARK_TIPS[device]) fail(`install: Bookmark on ${device} shows ${JSON.stringify(bookmark)}, expected "${BOOKMARK_TIPS[device]}"`);
+      const install = await tipAfterTap(page, 'install-button', INSTALL_TIPS[device]);
+      if (install !== INSTALL_TIPS[device]) fail(`install: Install web app on ${device} with no saved event shows ${JSON.stringify(install)}, expected "${INSTALL_TIPS[device]}"`);
     });
-    const home = await visit(standalone, `${base}/`);
-    await fakeInstallPrompt(home.page);
-    const shown = await installShown(home.page);
-    if (shown.button || shown.hint) fail(`install: the installed app shows the install ${shown.button ? 'button' : 'iPhone line'}`);
-    await home.page.close();
-  } finally {
-    await standalone.close();
   }
-  info(`install: hidden on load; the button appears after beforeinstallprompt, one tap calls prompt() once and hides it; not on ?team=${teamSlug}; ` +
-    'an iPhone user agent gets the Share line instead, as the only iPhone line on the home page, and keeps the footer line on team pages; nothing shows when running installed');
+
+  // 3. A saved event, accepted: prompt() once, then the area hides and the footer line comes back.
+  await withInstallPage(browser, 'android', home, 'install (accepted)', async (page) => {
+    if (!await fakeInstallPrompt(page, 'accepted')) fail('install: app.js did not call preventDefault() on beforeinstallprompt');
+    await tap(page, 'install-button', 'accepted prompt');
+    await page.locator('#install').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    const calls = await promptCalls(page);
+    if (calls !== 1) fail(`install: Install web app with a saved event called prompt() ${calls} times, expected 1`);
+    const s = await installState(page);
+    if (s.area) fail('install: the install area is still visible after the prompt was accepted');
+    if (!s.footer) fail("install: the footer's iPhone line didn't come back after the install area hid");
+  });
+
+  // 4. A saved event, dismissed: the buttons stay, and the next tap shows the tip, not prompt() again.
+  await withInstallPage(browser, 'android', home, 'install (dismissed)', async (page) => {
+    await fakeInstallPrompt(page, 'dismissed');
+    await tap(page, 'install-button', 'dismissed prompt');
+    await page.waitForFunction(() => window.installPromptCalls === 1, null, { timeout: 3_000 }).catch(() => {});
+    await page.waitForTimeout(200); // let app.js read userChoice
+    const s = await installState(page);
+    if (!s.bookmark || !s.install) fail('install: the buttons hid after the prompt was dismissed');
+    if (s.tip) fail('install: a tip showed alongside the browser prompt');
+    const tip = await tipAfterTap(page, 'install-button', INSTALL_TIPS.android);
+    if (tip !== INSTALL_TIPS.android) fail(`install: after a dismissal the next tap shows ${JSON.stringify(tip)}, expected the Android tip`);
+    const calls = await promptCalls(page);
+    if (calls !== 1) fail(`install: after a dismissal, prompt() was called ${calls} times in all, expected 1`);
+  });
+
+  // 5. appinstalled hides the area.
+  await withInstallPage(browser, 'android', home, 'install (appinstalled)', async (page) => {
+    await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+    if ((await installState(page)).area) fail('install: the install area is still visible after appinstalled');
+  });
+
+  // 6. Where it shows: the unknown-team page has the team list, so it gets the area; a team page
+  //    doesn't, even with a saved event, and keeps the footer's iPhone line.
+  await withInstallPage(browser, 'android', `${base}/?team=${UNKNOWN_SLUG}`, `install (?team=${UNKNOWN_SLUG})`, async (page) => {
+    if (!(await installState(page)).area) fail(`install: ?team=${UNKNOWN_SLUG} has no install area under its team list`);
+  });
+  const teamUrl = `${base}/?team=${encodeURIComponent(teamSlug)}`;
+  await withInstallPage(browser, 'android', teamUrl, `install (?team=${teamSlug})`, async (page) => {
+    await fakeInstallPrompt(page, 'accepted');
+    if ((await installState(page)).area) fail(`install: ?team=${teamSlug} shows the install area`);
+  });
+  await withInstallPage(browser, 'iphone', teamUrl, `install (iPhone ?team=${teamSlug})`, async (page) => {
+    const s = await installState(page);
+    if (s.area) fail(`install: ?team=${teamSlug} shows the install area with an iPhone user agent`);
+    if (!s.footer) fail(`install: ?team=${teamSlug} with an iPhone user agent hides the footer's iPhone line`);
+  });
+
+  // 7. Running installed (display-mode: standalone, or navigator.standalone on iPhone): no area.
+  for (const device of ['android', 'iphone']) {
+    const context = await installContext(browser, device);
+    try {
+      await context.addInitScript((stubStandalone) => {
+        if (stubStandalone) Object.defineProperty(Navigator.prototype, 'standalone', { get: () => true, configurable: true });
+        else {
+          const realMatchMedia = window.matchMedia.bind(window);
+          window.matchMedia = (query) => (/display-mode:\s*standalone/.test(query)
+            ? { ...realMatchMedia(query), matches: true, media: query }
+            : realMatchMedia(query));
+        }
+      }, device === 'iphone');
+      const v = await visit(context, home);
+      await fakeInstallPrompt(v.page, 'accepted');
+      const s = await installState(v.page);
+      if (s.area) fail(`install: the installed app (${device === 'iphone' ? 'navigator.standalone' : 'display-mode: standalone'}) shows the install area`);
+      if (!s.footer) fail(`install: the installed app (${device}) hides the footer's iPhone line`);
+      commonPageProblems(`install (${device} installed)`, v);
+    } finally {
+      await context.close();
+    }
+  }
+
+  // 8. At 360px and 390px: each label on one line, and the two buttons side by side on one row.
+  const sizes = [];
+  for (const width of [360, 390]) {
+    await withInstallPage(browser, 'android', home, `install (${width}px)`, async (page) => {
+      await page.evaluate(() => document.fonts.ready);
+      const m = await page.evaluate(() => {
+        const box = (id) => {
+          const b = document.getElementById(id);
+          const r = b.getBoundingClientRect();
+          return { top: r.top, left: r.left, right: r.right, width: r.width, height: r.height, overflows: b.scrollWidth > b.clientWidth };
+        };
+        return { bookmark: box('bookmark-button'), install: box('install-button'), scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      for (const [name, b] of [['Bookmark', m.bookmark], ['Install web app', m.install]]) {
+        if (b.height >= 56) fail(`install: at ${width}px the ${name} button is ${b.height}px tall, so its label wraps`);
+        if (b.overflows) fail(`install: at ${width}px the ${name} label is wider than its button`);
+      }
+      if (Math.abs(m.bookmark.top - m.install.top) > 1 || m.bookmark.right > m.install.left) fail(`install: at ${width}px the two buttons aren't side by side on one row`);
+      if (m.scroll > 0) fail(`install: at ${width}px the home page scrolls sideways by ${m.scroll}px`);
+      sizes.push(`${width}px: ${Math.round(m.bookmark.width)}+${Math.round(m.install.width)}px wide, ${Math.round(m.install.height)}px tall`);
+    }, width);
+  }
+
+  info(`install: Bookmark + Install web app and the reassurance line show on load (footer iPhone line hidden); Bookmark and Install tips are right for ${Object.keys(INSTALL_UAS).join(', ')}; ` +
+    `a saved event prompts once, hides the area when accepted and falls back to the tip after a dismissal; appinstalled hides it; shown on ?team=${UNKNOWN_SLUG}, not on ?team=${teamSlug} or when installed; ` +
+    `one row of single-line buttons (${sizes.join('; ')})`);
 }
 
 // ---------------------------------------------------------------- main
@@ -593,7 +715,7 @@ async function main() {
     process.exit(1);
   }
   console.log(`PASS check-p2: ${currentTeams.length} picker entries; ${currentTeams.length} team pages render (${withBriefing} briefings, ` +
-    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; install button and iPhone line shown only where they should be; manifest and sw.js valid; ` +
+    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; Bookmark + Install web app shown only where they should be, with the right tips; manifest and sw.js valid; ` +
     `no secrets in ${files.length} frontend files; ` +
     (isLive ? 'live domain serves HTTPS and redirects http:// and www.' : `live-domain checks NOT run (base ${base})`));
 }

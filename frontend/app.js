@@ -25,8 +25,9 @@
   const main = document.getElementById('main');
   const toastEl = document.getElementById('toast');
   const installEl = document.getElementById('install');
+  const bookmarkButton = document.getElementById('bookmark-button');
   const installButton = document.getElementById('install-button');
-  const installHint = document.getElementById('install-hint');
+  const installTip = document.getElementById('install-tip');
   const footerIphone = document.getElementById('footer-iphone');
 
   // iPhone Safari only applies :active (the team tiles' pressed colour) when a touchstart listener exists.
@@ -189,53 +190,88 @@
     updateInstall();
   }
 
-  // ---------------------------------------------------------------- install (Revision 13)
+  // ---------------------------------------------------------------- install (Revision 14)
 
-  // Chrome, Edge and Samsung Internet fire beforeinstallprompt, which the "Add to home screen" button
-  // replays. iOS never fires it, so iPhone and iPad get a line of help instead. Neither shows on team
-  // pages, or once the site is running as an installed app.
+  // Bookmark + Install web app, under the team list. A page can't make a bookmark, so Bookmark shows a
+  // tip. Install web app replays beforeinstallprompt (Chrome, Edge, Samsung Internet) when the browser
+  // has fired it, and otherwise shows a tip too. Neither shows on team pages or in the installed app.
+  const BOOKMARK_TIPS = {
+    android: 'Tap ⋮ at the top right, then the ☆ star.',
+    ios: 'Tap Share, then "Add Bookmark".',
+    mac: 'Press ⌘+D to bookmark this page.',
+    desktop: 'Press Ctrl+D to bookmark this page.',
+  };
+  const DESKTOP_INSTALL_TIP = "Use the install icon at the right of the address bar, or your browser's menu.";
+  const INSTALL_TIPS = {
+    android: 'Tap ⋮ at the top right, then "Install app".',
+    ios: 'Tap Share, then "Add to Home Screen".',
+    mac: DESKTOP_INSTALL_TIP,
+    desktop: DESKTOP_INSTALL_TIP,
+  };
+
   let installPrompt = null;
+  let installDone = false; // accepted or appinstalled, on this page load
 
   const runningInstalled = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  // iPadOS Safari reports a Mac user agent, but a Mac has no touch points.
-  const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
-    || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+  // iOS before Mac, because iPhone user agents also say "Mac OS X", and iPadOS Safari reports a Mac
+  // user agent; only the iPad has touch points.
+  function device() {
+    const ua = navigator.userAgent;
+    if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    if (/Macintosh|Mac OS X/.test(ua)) return 'mac';
+    return 'desktop';
+  }
 
   function updateInstall() {
-    const home = document.body.dataset.state === 'home' || document.body.dataset.state === 'unknown-team';
-    const showButton = home && !runningInstalled() && Boolean(installPrompt);
-    const showHint = home && !runningInstalled() && !showButton && isIos();
-    installButton.hidden = !showButton;
-    installHint.hidden = !showHint;
-    installEl.hidden = !showButton && !showHint;
-    // The footer's shorter iPhone line would only repeat it.
-    footerIphone.hidden = showHint;
+    const listPage = document.body.dataset.state === 'home' || document.body.dataset.state === 'unknown-team';
+    installEl.hidden = !listPage || runningInstalled() || installDone;
+    // The footer's iPhone line would only repeat what the buttons offer.
+    footerIphone.hidden = !installEl.hidden;
+  }
+
+  // One tip at a time, replacing any earlier one. A live region that has only just been unhidden isn't
+  // always announced, so the text goes in a frame later.
+  function showTip(text) {
+    installTip.hidden = false;
+    requestAnimationFrame(() => { installTip.textContent = text; });
   }
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     installPrompt = event;
-    updateInstall();
   });
 
   window.addEventListener('appinstalled', () => {
     installPrompt = null;
+    installDone = true;
     updateInstall();
   });
 
-  // The saved event can only be used once, so it's cleared before prompting: a second tap while the
-  // browser's dialog opens does nothing.
+  bookmarkButton.addEventListener('click', () => showTip(BOOKMARK_TIPS[device()]));
+
+  // The saved event can only be used once, so it's cleared before prompting. After a dismissal the
+  // buttons stay, and later taps get the tip.
   installButton.addEventListener('click', async () => {
     const event = installPrompt;
-    if (!event) return;
+    if (!event) {
+      showTip(INSTALL_TIPS[device()]);
+      return;
+    }
     installPrompt = null;
+    let outcome = null;
     try {
       await event.prompt();
-      await event.userChoice;
+      ({ outcome } = await event.userChoice);
     } catch (err) {
       console.warn('Install prompt failed:', err);
+      showTip(INSTALL_TIPS[device()]);
     }
-    updateInstall();
+    if (outcome === 'accepted') {
+      installDone = true;
+      updateInstall();
+    }
   });
 
   function offlineNotice() {

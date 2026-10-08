@@ -25,10 +25,14 @@
     <p class="status">Loading…</p>
   </main>
 
-  <!-- Home page only; app.js shows the button or the iPhone line (Revision 13). -->
+  <!-- Pages with the team list only; app.js shows it, and fills the tip line (Revision 14). -->
   <div id="install" class="install" hidden>
-    <button type="button" id="install-button" class="install__button" hidden>Add to home screen</button>
-    <p id="install-hint" class="install__hint" hidden>On iPhone: tap the Share button, then <span class="install__step">"Add to Home Screen".</span></p>
+    <div class="install__buttons">
+      <button type="button" id="bookmark-button" class="install__button install__button--secondary">Bookmark</button>
+      <button type="button" id="install-button" class="install__button">Install web app</button>
+    </div>
+    <p class="install__reassure">Free · No app store · Remove any time</p>
+    <p id="install-tip" class="install__tip" aria-live="polite" hidden></p>
   </div>
 
   <footer class="footer">

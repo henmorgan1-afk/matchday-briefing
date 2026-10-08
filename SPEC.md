@@ -617,6 +617,8 @@ The project owner approved new app icons to replace the P2 dark green set, which
 
 ### Revision 13 (7 Oct 2026, install button)
 
+*(Superseded by Revision 14, which replaces the single button and the iPhone line with a Bookmark + Install web app pair. The area's place, its margins, the `--accent-pressed` token, the primary button's look and the installed-app rule carry over.)*
+
 The project owner asked for a one-tap install button on the home page. Before this, the browser's own install prompt was the only way on Android, and §4 and §6 ruled out a custom one. Both are updated to match. The work is on branch `install-button`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change; the pipeline, the team pages and the service worker are untouched.
 
 1. **Where.** A new install area (`#install`) sits between `<main>` and the footer, so it's at the very bottom of the home page, below the team list. It shows only when `body[data-state]` is `home` or `unknown-team`: those are the two states that show the picker. It never shows on a team page, a loading page or an error page. `index.html` gives the area, the button and the iPhone line the `hidden` attribute, so nothing flashes before `app.js` runs.
@@ -649,6 +651,68 @@ The project owner asked for a one-tap install button on the home page. Before th
      - One never hid the footer's iPhone line. It failed with 2 problems: the footer line was showing on the iPhone home page, and that page had 2 visible iPhone lines.
    - At 390px wide the button is 358px wide (the column), 48px tall, and nothing scrolls sideways. Under `:active` its background is `#6E2E16`.
    - Screenshots, in `review/` (local only), at 390px wide and scrolled to the bottom, retaken after the 8px margin and the footer change: `install-button-android.png` (after the fake event, with the footer line), `install-button-pressed.png` (the button held down, so in its `:active` state) and `install-hint-iphone.png` (iPhone user agent, without the footer line).
+
+### Revision 14 (8 Oct 2026, Bookmark + Install web app)
+
+The project owner replaced Revision 13's single install button with a pair: Bookmark and Install web app. A website can't create a bookmark, so Bookmark shows a short tip for the tester's device. Install web app opens the browser's real install dialog where the browser allows it, and otherwise shows a tip. Its label is close to what the browser dialogs say ("Install app"), so tapping it doesn't feel like a bait-and-switch. The work is on branch `install-pair`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change. Revision 13, §4, §6 and §9 are updated to match; where Revision 13 differs, this note takes precedence.
+
+1. **Layout.** The area is where Revision 13 put it: between `<main>` and the footer, below the team list, with the same 8px top and 24px bottom margins. It holds:
+   - Two buttons side by side in a two-column grid: equal widths (`minmax(0, 1fr)`), a 12px column gap, at most 360px wide and centred. On the left is "Bookmark" (secondary); on the right, "Install web app" (primary). Both are real `<button type="button">` elements, at least 48px tall.
+   - Below them, a reassurance line: Free · No app store · Remove any time. It's Source Serif 4, 14px, `--muted`, centred, with a 10px top margin.
+   - Below that, a tip line (`#install-tip`, `aria-live="polite"`). It starts `hidden`. It's Source Serif 4, 15px, `--ink`, centred, at most 320px wide, with a 10px top margin. A tap on either button shows that button's tip there, replacing any earlier one. `app.js` unhides the line and then sets its text a frame later, because some screen readers don't announce a live region that has only just appeared.
+   - Revision 13's iPhone-only line (`#install-hint`) and its code are gone; the tip line replaces it.
+2. **Style.**
+   - Install web app keeps Revision 13's primary look: `--accent` background, `--card` text, Oswald 600 15px uppercase, 0.06em letter-spacing, 8px corners. Hover (fine pointers only) and `:active` are `--accent-pressed`.
+   - Bookmark has the same size, font and corners, a transparent background, a 1.5px solid `--accent` border and `--accent` text. Hover (fine pointers only) and `:active` fill it with `--tile`.
+   - Install web app also has a 1.5px border, in its own colour (`--accent`, or `--accent-pressed` on hover and press). So the two buttons are exactly the same size.
+   - Both have a 2px `--ink` focus outline, offset 2px, and no tap flash. Side padding is 12px. Labels have `white-space: nowrap`, so they never wrap.
+   - **Labels fit at 15px, so there's no 14px fallback.** At 360px wide each button is 158px. "INSTALL WEB APP" is 118.6px wide in Oswald 600 at 15px with 0.06em letter-spacing, leaving 13px to spare inside the padding and borders. At 390px each button is 173px.
+   - No new colour token: Bookmark's pressed fill reuses `--tile` (Revision 11).
+3. **Devices.** In this order, so iPhones, whose user agents also say "Mac OS X", aren't taken for Macs:
+   - **iOS:** `/iPhone|iPad|iPod/` in the user agent, or a `Macintosh` user agent with `navigator.maxTouchPoints > 1` (iPadOS Safari).
+   - **Android:** `/Android/`.
+   - **Mac desktop:** `/Macintosh|Mac OS X/` with no touch.
+   - **Other desktop:** everything else.
+4. **Bookmark tips.**
+   - Android: Tap ⋮ at the top right, then the ☆ star.
+   - iOS: Tap Share, then "Add Bookmark".
+   - Mac desktop: Press ⌘+D to bookmark this page.
+   - Other desktop: Press Ctrl+D to bookmark this page.
+   - ⋮, ☆ and ⌘ aren't in the self-hosted Source Serif 4 files, so they come from the device's own fonts. They render correctly in Chromium on Windows.
+5. **Install web app.**
+   - `app.js` still listens for `beforeinstallprompt`, calls `preventDefault()` and saves the event. The buttons no longer wait for it: they show as soon as the page renders.
+   - With a saved event, a tap clears it, calls `prompt()` and waits for `userChoice`. If the outcome is `accepted`, the whole area hides. If it's `dismissed`, the buttons stay, and later taps show the tip, because the event can't be used twice. If `prompt()` throws, the tip shows.
+   - With no saved event, a tap shows a tip:
+     - iOS: Tap Share, then "Add to Home Screen".
+     - Android: Tap ⋮ at the top right, then "Install app".
+     - Desktop, Mac included: Use the install icon at the right of the address bar, or your browser's menu.
+   - `appinstalled` hides the whole area.
+   - "Hidden after install" lasts for that page load only; nothing is stored. A tester who installs and then keeps using the browser tab sees the pair again on their next visit there, and Install web app then shows the tip. A stored flag would hide it for good, even after they removed the app ("Remove any time").
+6. **Where it shows.** Only on the pages with the team list: `body[data-state]` of `home` or `unknown-team`. It never shows on team, loading or error pages, or when running installed (`display-mode: standalone`, or `navigator.standalone === true`), as in Revision 13.
+7. **Footer.** The footer's iPhone line (`#footer-iphone`) is hidden whenever the install area is visible, on every device, since the pair covers it. Everywhere else it shows, including team pages, the installed app, and the home page after an accepted install or `appinstalled`.
+8. **Check.** `check-p2.js`'s Revision 13 install step is replaced; §9 is updated to match. It uses Android, iPhone, Windows and Mac user agents (phones with touch, desktops without), and checks that:
+   - the served `index.html` has `hidden` on `#install` and `#install-tip`;
+   - on the Android home page on load, both buttons and the reassurance line are visible, the tip is hidden, and the footer's iPhone line is hidden. The labels (`textContent`) are exactly "Bookmark" and "Install web app", both are `<button type="button">`, and the reassurance text is exact;
+   - for each of the four user agents, Bookmark shows that device's exact tip. Then Install web app, with no saved event, shows its exact tip in place of the Bookmark one (for Mac, the desktop tip). There are no console errors during the taps;
+   - with a fake `beforeinstallprompt` whose `userChoice` is `{ outcome: 'accepted' }`, `app.js` calls `preventDefault()`. A tap calls `prompt()` exactly once and hides the area, and the footer's iPhone line comes back;
+   - with `{ outcome: 'dismissed' }`, the buttons stay visible with no tip. The next tap shows the Android tip, and `prompt()` has still been called only once;
+   - a dispatched `appinstalled` hides the area;
+   - the unknown-team page shows the area. A team page doesn't, even with a saved event. With an iPhone user agent, a team page shows the footer's iPhone line;
+   - with `display-mode: standalone` (Android) or `navigator.standalone` (iPhone) stubbed, there's no area and the footer line shows;
+   - at 360px and 390px wide, each button is under 56px tall, so one line, and its label isn't wider than the button. The two buttons sit on the same row, side by side, and the page doesn't scroll sideways.
+   - A button the check can't tap is reported as a failure within 3 seconds, rather than stopping the whole run on Playwright's 30-second timeout.
+9. **Findings** (8 Oct 2026).
+   - `check-p2.js --base http://localhost:8080` passes, with the new install step and everything from before: 20 picker entries, 20 team pages (8 briefings, 12 "No briefing yet"), no console errors, and secrets checked across 24 frontend files. The buttons measure 158 + 158px at 360px and 173 + 173px at 390px, all 48px tall.
+   - A deliberately broken copy, with the label "Install app" and `app.js` hiding the area after a *dismissed* prompt, failed with 4 problems:
+     - the wrong label;
+     - the buttons hidden after the dismissal;
+     - the next tap impossible;
+     - so no tip after the dismissal.
+
+     The first run against it showed that a hidden button made the check stop on Playwright's 30-second click timeout instead of reporting a failure. That's the 3-second rule in item 8.
+   - Chromium reports the 1.5px borders as 1px (`getComputedStyle`), as it does for Revision 11's pills.
+   - On desktop browsers that can't install a web app at all, such as Firefox, the desktop install tip ("…or your browser's menu") has nothing to point at. That's left as it is for now.
+   - Screenshots, in `review/` (local only), scrolled to the bottom: `install-pair-390.png` and `install-pair-360.png` (Android), `install-pair-tip-iphone.png` (iPhone at 390px, after tapping Install web app) and `install-pair-desktop.png` (Windows at 1280px, after tapping Bookmark).
 
 ## 1. Architecture
 
@@ -1300,7 +1364,11 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
   - Comment `text` and `note` are model output, so `app.js` inserts them with `textContent`, never `innerHTML`. A stray `<` or `&` in a generated line must render as text, not break the page.
 - **Existing mock-up:** the look-and-feel prototype published earlier on claude.ai is a visual reference only. Its sample lines include scorers, specific incidents and match-specific banter that §3.3 now forbids, so don't copy its content or show it to testers as representative of real output.
 - No ad space is reserved anywhere in this layout; ad placement is designed when V1 actually implements ads.
-- **Install (Revision 13):** at the bottom of the home page, below the team list, an "Add to home screen" button appears when the browser fires `beforeinstallprompt` (Android and desktop Chrome, Edge, Samsung Internet), and opens the browser's install prompt. On iPhone and iPad, which have no install prompt, one line of help shows there instead: On iPhone: tap the Share button, then "Add to Home Screen". Neither shows on team pages or when the site is already running installed. The footer still carries its own one-line iPhone help ("On iPhone: Share → Add to Home Screen") on every page, except when the home page's iPhone line is showing, so the help never appears twice.
+- **Install (Revision 14):** at the bottom of the home page (and the unknown-team page), below the team list, two buttons sit side by side: "Bookmark" and "Install web app", with "Free · No app store · Remove any time" under them.
+  - Bookmark shows a short tip for the device, because a page can't create a bookmark.
+  - Install web app opens the browser's own install prompt when the browser has fired `beforeinstallprompt` (Android and desktop Chrome, Edge, Samsung Internet), and otherwise shows a tip for the device (iPhone and iPad have no install prompt).
+  - Neither shows on team pages or when the site is already running installed.
+  - The footer's one-line iPhone help ("On iPhone: Share → Add to Home Screen") is hidden while the buttons show, and shows everywhere else.
 - **Installed look:** `display: standalone`, theme and background colours both `#F2EADB` (the page colour, `--paper`), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
 
 ## 5. Testers (P4)
@@ -1318,7 +1386,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 - Ads/monetisation, including reserved layout space
 - Tone picker, difficulty levels, push notifications, widgets, share-sheet integration (V2/V3). The PWA makes web push possible later, but no push is built in P0–P5.
 - A Play Store listing (Trusted Web Activity wrap) and a Capacitor native shell. Both are later, gated steps (§10), not part of this build.
-- A custom install banner or pop-up. The home page's "Add to home screen" button (Revision 13) stays at the bottom of the page and only replays the browser's own prompt.
+- A custom install banner or pop-up. The home page's Bookmark and Install web app buttons (Revision 14) stay at the bottom of the page. Install web app only replays the browser's own prompt or shows a tip.
 - Multi-sport (V4)
 - Quiz/knowledge-testing (cut permanently, per design doc)
 - Verified historical `BANTER` callbacks (parked — needs a future historical data source)
@@ -1393,7 +1461,14 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
 - **`scripts/check-p2.js`:**
   - `https://didyouseethatludicrousdisplaylastnight.co.uk/` returns 200 over HTTPS, and the `http://` and `www.` versions both redirect to it.
   - Using Playwright with headless Chromium (a plain HTTP fetch can't see what `app.js` renders): the homepage shows one picker entry per current-season row in `teams`, and loading `?team=<slug>` for every one of those slugs renders either at least one comment card or the "No briefing yet" message — never a blank page, an error state, or a browser console error. `?team=not-a-real-team` renders "We don't know that team".
-  - **Install (Revision 13):** the install button and the iPhone line are both hidden on load (and `hidden` in the served HTML). A fake `beforeinstallprompt` (stub `prompt()`, `userChoice` resolving to `{ outcome: 'accepted' }`) makes the button visible on the home page. Clicking it calls `prompt()` once and hides it. Neither appears on a team page. With an iPhone user agent the iPhone line is visible and the button isn't, and it is the home page's only visible line of iPhone help (the footer's is hidden). A team page still shows the footer's line. Neither the button nor the line appears when running installed.
+  - **Install (Revision 14):**
+    - On the Android home page, Bookmark, Install web app and the reassurance line are visible on load, with exact labels. The tip and the footer's iPhone line are hidden.
+    - Bookmark shows the exact tip for Android, iPhone, Windows and Mac user agents. Install web app with no saved event shows the exact tip for each, with no console errors.
+    - With a fake `beforeinstallprompt`, a tap calls `prompt()` exactly once. `{ outcome: 'accepted' }` hides the area. `{ outcome: 'dismissed' }` leaves the buttons, and the next tap shows the tip without calling `prompt()` again.
+    - `appinstalled` hides the area.
+    - The unknown-team page shows the area. A team page doesn't, and with an iPhone user agent it shows the footer's iPhone line.
+    - Running installed (`display-mode: standalone` or `navigator.standalone` stubbed) shows no area.
+    - At 360px and 390px wide, both buttons are single-line (under 56px tall) and sit side by side on one row.
   - `manifest.webmanifest` has `name`, `start_url`, `display: "standalone"` and 192px + 512px icons. Every manifest icon returns HTTP 200 and its real pixel size matches its `sizes`, and exactly one is `maskable`. The `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` linked from `index.html` each return 200, and the two PNGs are 32×32 and 180×180 (Revision 12). `sw.js` returns 200 with a JavaScript content type.
   - **Secrets check:** fetches every deployed file under `frontend/` (HTML, JS, CSS, manifest) and fails if the value of `FOOTBALL_DATA_API_KEY`, `ANTHROPIC_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` appears in any of them.
 - **`scripts/check-p3.js --match <id>`:**
