@@ -615,6 +615,39 @@ The project owner approved new app icons to replace the P2 dark green set, which
      - `icon-192` and `apple-touch-icon` on dark and light backgrounds;
      - `favicon.svg` at 16px, and `favicon-32` at actual size and at 4×.
 
+### Revision 13 (7 Oct 2026, install button)
+
+The project owner asked for a one-tap install button on the home page. Before this, the browser's own install prompt was the only way on Android, and §4 and §6 ruled out a custom one. Both are updated to match. The work is on branch `install-button`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change; the pipeline, the team pages and the service worker are untouched.
+
+1. **Where.** A new install area (`#install`) sits between `<main>` and the footer, so it's at the very bottom of the home page, below the team list. It shows only when `body[data-state]` is `home` or `unknown-team`: those are the two states that show the picker. It never shows on a team page, a loading page or an error page. `index.html` gives the area, the button and the iPhone line the `hidden` attribute, so nothing flashes before `app.js` runs.
+2. **Android, desktop Chrome, Edge and Samsung Internet.**
+   - `app.js` listens for `beforeinstallprompt`. It calls `preventDefault()`, keeps the event, and shows an "Add to home screen" button. The control is a real `<button type="button">`.
+   - Tapping it calls `prompt()` on the saved event and waits for `userChoice`, then hides the button. The event can be used only once, so `app.js` clears it just before prompting, and a second tap while the browser's dialog opens does nothing.
+   - The button also hides when `appinstalled` fires.
+   - The event is kept on team pages too, but nothing is shown there. Every page is a full page load, so the browser fires the event again when the tester goes back to the home page.
+3. **iPhone and iPad.** iOS never fires `beforeinstallprompt`, so these get one line of text instead of the button: On iPhone: tap the Share button, then "Add to Home Screen". iOS is a user agent matching `/iPhone|iPad|iPod/`, or a Mac user agent with `navigator.maxTouchPoints > 1`, because iPadOS Safari reports itself as a Mac. If a browser ever fires `beforeinstallprompt` as well, it gets the button, never both.
+4. **Already installed.** Neither shows when the site runs as an installed app: `matchMedia('(display-mode: standalone)').matches` or `navigator.standalone === true`.
+5. **Look.**
+   - The area is centred in the page column, with a 32px top margin and a 24px bottom margin.
+   - The button is `--accent` with `--card` text, in Oswald 600, 15px, uppercase, with 0.06em letter-spacing. It is at least 48px tall and full width up to 360px, with 16px side padding, no border and 8px corners.
+   - Hover (inside `@media (hover: hover) and (pointer: fine)` only) and `:active` use a new token, `--accent-pressed` `#6E2E16`. `app.js`'s existing `touchstart` listener (Revision 11) makes `:active` show on iPhone. Keyboard focus shows a 2px `--ink` outline, offset 2px. The phone's own tap flash is turned off.
+   - The iPhone line is Source Serif 4, 15px, `--muted`, centred, at most 320px wide. "Add to Home Screen" (with its quotes) is kept on one line (`.install__step`), so at 390px the line breaks after "then" rather than inside the menu item's name.
+6. **Colours.** `--accent-pressed` joins Revision 10's six and Revision 11's four tokens, making eleven. The `rgba` fallback from Revision 11 is still the only colour in `style.css` that isn't a token.
+7. **Footer.** The footer's iPhone line ("On iPhone: Share → Add to Home Screen") stays. It's the only install help on team pages, which testers often open straight from a link. On an iPhone's home page, that means the help appears twice.
+8. **Check.** `check-p2.js` gains an install step; §9 is updated to match. Headless Chromium never fires `beforeinstallprompt` itself, so the check dispatches a fake one: an `Event` with `cancelable: true`, a stub `prompt()` that counts its calls, and a `userChoice` that resolves to `{ outcome: 'accepted' }`. At 390px wide it checks that:
+   - the served `index.html` has the `hidden` attribute on `#install`, `#install-button` and `#install-hint`;
+   - on load, the home page shows neither the button nor the iPhone line;
+   - after the fake event, `app.js` has called `preventDefault()`, and the button is visible and reads "Add to home screen";
+   - one click calls `prompt()` exactly once, and the button is hidden afterwards;
+   - on a team page, neither shows, even after the fake event;
+   - with an iPhone user agent, the home page shows the iPhone line with its exact text and no button, and a team page doesn't show the line;
+   - with `navigator.standalone` and `display-mode: standalone` both stubbed to true, neither shows, even after the fake event.
+9. **Findings** (7 Oct 2026).
+   - `check-p2.js --base http://localhost:8080` passes, with the new install step and everything from before: 20 picker entries, 20 team pages (8 briefings, 12 "No briefing yet"), no console errors, and secrets checked across 24 frontend files.
+   - A deliberately broken `app.js`, which showed the area on every page and treated every browser as iOS, failed with 3 problems: the iPhone line on load on desktop, and the button and the line on a team page.
+   - At 390px wide the button is 358px wide (the column), 48px tall, and nothing scrolls sideways. Under `:active` its background is `#6E2E16`.
+   - Screenshots, in `review/` (local only), at 390px wide and scrolled to the bottom: `install-button-android.png` (after the fake event), `install-button-pressed.png` (the button held down, so in its `:active` state) and `install-hint-iphone.png` (iPhone user agent).
+
 ## 1. Architecture
 
 ```
@@ -1265,7 +1298,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
   - Comment `text` and `note` are model output, so `app.js` inserts them with `textContent`, never `innerHTML`. A stray `<` or `&` in a generated line must render as text, not break the page.
 - **Existing mock-up:** the look-and-feel prototype published earlier on claude.ai is a visual reference only. Its sample lines include scorers, specific incidents and match-specific banter that §3.3 now forbids, so don't copy its content or show it to testers as representative of real output.
 - No ad space is reserved anywhere in this layout; ad placement is designed when V1 actually implements ads.
-- **Install:** on Android/Chrome, the browser's own "Install app" prompt is enough — no custom install banner in this build. The homepage footer carries one line of help for iOS testers ("On iPhone: Share → Add to Home Screen"), since iOS has no install prompt.
+- **Install (Revision 13):** at the bottom of the home page, below the team list, an "Add to home screen" button appears when the browser fires `beforeinstallprompt` (Android and desktop Chrome, Edge, Samsung Internet), and opens the browser's install prompt. On iPhone and iPad, which have no install prompt, one line of help shows there instead: On iPhone: tap the Share button, then "Add to Home Screen". Neither shows on team pages or when the site is already running installed. The footer still carries its own one-line iPhone help on every page ("On iPhone: Share → Add to Home Screen").
 - **Installed look:** `display: standalone`, theme and background colours both `#F2EADB` (the page colour, `--paper`), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
 
 ## 5. Testers (P4)
@@ -1283,7 +1316,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 - Ads/monetisation, including reserved layout space
 - Tone picker, difficulty levels, push notifications, widgets, share-sheet integration (V2/V3). The PWA makes web push possible later, but no push is built in P0–P5.
 - A Play Store listing (Trusted Web Activity wrap) and a Capacitor native shell. Both are later, gated steps (§10), not part of this build.
-- A custom install banner. The browser's own prompt is enough for testers.
+- A custom install banner or pop-up. The home page's "Add to home screen" button (Revision 13) stays at the bottom of the page and only replays the browser's own prompt.
 - Multi-sport (V4)
 - Quiz/knowledge-testing (cut permanently, per design doc)
 - Verified historical `BANTER` callbacks (parked — needs a future historical data source)
@@ -1358,6 +1391,7 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
 - **`scripts/check-p2.js`:**
   - `https://didyouseethatludicrousdisplaylastnight.co.uk/` returns 200 over HTTPS, and the `http://` and `www.` versions both redirect to it.
   - Using Playwright with headless Chromium (a plain HTTP fetch can't see what `app.js` renders): the homepage shows one picker entry per current-season row in `teams`, and loading `?team=<slug>` for every one of those slugs renders either at least one comment card or the "No briefing yet" message — never a blank page, an error state, or a browser console error. `?team=not-a-real-team` renders "We don't know that team".
+  - **Install (Revision 13):** the install button and the iPhone line are both hidden on load (and `hidden` in the served HTML). A fake `beforeinstallprompt` (stub `prompt()`, `userChoice` resolving to `{ outcome: 'accepted' }`) makes the button visible on the home page. Clicking it calls `prompt()` once and hides it. Neither appears on a team page. With an iPhone user agent the iPhone line is visible and the button isn't. Neither appears when running installed.
   - `manifest.webmanifest` has `name`, `start_url`, `display: "standalone"` and 192px + 512px icons. Every manifest icon returns HTTP 200 and its real pixel size matches its `sizes`, and exactly one is `maskable`. The `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` linked from `index.html` each return 200, and the two PNGs are 32×32 and 180×180 (Revision 12). `sw.js` returns 200 with a JavaScript content type.
   - **Secrets check:** fetches every deployed file under `frontend/` (HTML, JS, CSS, manifest) and fails if the value of `FOOTBALL_DATA_API_KEY`, `ANTHROPIC_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` appears in any of them.
 - **`scripts/check-p3.js --match <id>`:**

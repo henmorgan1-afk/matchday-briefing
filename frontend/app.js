@@ -24,6 +24,9 @@
 
   const main = document.getElementById('main');
   const toastEl = document.getElementById('toast');
+  const installEl = document.getElementById('install');
+  const installButton = document.getElementById('install-button');
+  const installHint = document.getElementById('install-hint');
 
   // iPhone Safari only applies :active (the team tiles' pressed colour) when a touchstart listener exists.
   document.addEventListener('touchstart', () => {}, { passive: true });
@@ -182,7 +185,55 @@
     const compact = state === 'team' || state === 'no-briefing' || ((state === 'loading' || state === 'error') && teamUrl);
     document.body.dataset.masthead = compact ? 'compact' : 'full';
     document.body.dataset.state = state;
+    updateInstall();
   }
+
+  // ---------------------------------------------------------------- install (Revision 13)
+
+  // Chrome, Edge and Samsung Internet fire beforeinstallprompt, which the "Add to home screen" button
+  // replays. iOS never fires it, so iPhone and iPad get a line of help instead. Neither shows on team
+  // pages, or once the site is running as an installed app.
+  let installPrompt = null;
+
+  const runningInstalled = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  // iPadOS Safari reports a Mac user agent, but a Mac has no touch points.
+  const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
+    || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+  function updateInstall() {
+    const home = document.body.dataset.state === 'home' || document.body.dataset.state === 'unknown-team';
+    const showButton = home && !runningInstalled() && Boolean(installPrompt);
+    const showHint = home && !runningInstalled() && !showButton && isIos();
+    installButton.hidden = !showButton;
+    installHint.hidden = !showHint;
+    installEl.hidden = !showButton && !showHint;
+  }
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    installPrompt = event;
+    updateInstall();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    updateInstall();
+  });
+
+  // The saved event can only be used once, so it's cleared before prompting: a second tap while the
+  // browser's dialog opens does nothing.
+  installButton.addEventListener('click', async () => {
+    const event = installPrompt;
+    if (!event) return;
+    installPrompt = null;
+    try {
+      await event.prompt();
+      await event.userChoice;
+    } catch (err) {
+      console.warn('Install prompt failed:', err);
+    }
+    updateInstall();
+  });
 
   function offlineNotice() {
     return navigator.onLine ? null : el('p', { class: 'notice notice--offline', text: "You're offline. This is the last version saved on this device." });

@@ -1,6 +1,7 @@
 /* Ludicrous Display (SPEC.md §4), in design direction A, "Matchday programme" (Revision 10). Every
-   colour is one of the tokens in :root (six from Revision 10, four tile colours from Revision 11),
-   apart from the pressed tile shadow's rgba fallback for browsers without color-mix. --paper is also the manifest's theme_color and
+   colour is one of the tokens in :root (six from Revision 10, four tile colours from Revision 11,
+   the install button's pressed colour from Revision 13), apart from the pressed tile shadow's rgba
+   fallback for browsers without color-mix. --paper is also the manifest's theme_color and
    background_color, and the theme-color meta tag. The fonts are self-hosted in fonts/ (SIL OFL 1.1,
    see fonts/OFL.txt). */
 
@@ -104,6 +105,7 @@
   --tile-edge: #D6C8B6;
   --tile-hover: #86664B;
   --tile-pressed: #684D39;
+  --accent-pressed: #6E2E16;
 
   --display: "Oswald", "Arial Narrow", sans-serif;
   --serif: "Source Serif 4", Georgia, serif;
@@ -137,8 +139,8 @@ a { color: var(--accent); }
 
 h1, h2 { margin: 0; }
 
-/* The masthead, page and footer share one column, so their rules line up. */
-.masthead, .page, .footer {
+/* The masthead, page, install area and footer share one column, so their rules line up. */
+.masthead, .page, .install, .footer {
   width: calc(100% - 2 * var(--gutter));
   max-width: var(--measure);
   margin-left: auto;
@@ -553,6 +555,59 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
   background: var(--ink);
   color: var(--paper);
 }
+
+/* ---------------------------------------------------------------- install (Revision 13) */
+
+/* Below the team list on the home page only. app.js shows the button (Chrome, Edge, Samsung
+   Internet) or the iPhone line, never both, and neither in the installed app. */
+.install {
+  margin-top: 32px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.install[hidden], .install [hidden] { display: none; }
+
+.install__button {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  min-height: 48px;
+  margin: 0 auto;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--card);
+  font: 600 15px/1 var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .install__button:hover { background: var(--accent-pressed); }
+}
+
+/* iPhone Safari needs app.js's touchstart listener to show it. */
+.install__button:active { background: var(--accent-pressed); }
+
+.install__button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.install__hint {
+  max-width: 320px;
+  margin: 0 auto;
+  color: var(--muted);
+  font: 400 15px/1.4 var(--serif);
+  text-align: center;
+}
+
+/* At 320px the line wraps; this keeps the menu item's name together on the second line. */
+.install__step { white-space: nowrap; }
 
 /* ---------------------------------------------------------------- footer and toast */
 

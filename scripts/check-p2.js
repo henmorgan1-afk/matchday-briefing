@@ -437,6 +437,108 @@ async function checkOffline(browser, base, slug, expectedIds) {
   }
 }
 
+// The install area (Revision 13). Headless Chromium never fires beforeinstallprompt itself, so the
+// check dispatches a fake one, with a prompt() that counts its calls and a userChoice of "accepted".
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1';
+
+const installShown = async (page) => ({
+  button: await page.locator('#install-button').isVisible(),
+  hint: await page.locator('#install-hint').isVisible(),
+});
+
+// Returns whether app.js called preventDefault() on it.
+const fakeInstallPrompt = (page) => page.evaluate(() => {
+  const event = new Event('beforeinstallprompt', { cancelable: true });
+  window.installPromptCalls = 0;
+  event.prompt = () => { window.installPromptCalls += 1; return Promise.resolve(); };
+  event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+});
+
+async function checkInstall(browser, base, teamSlug) {
+  // The served HTML hides the area itself, so nothing flashes before app.js runs.
+  const html = await (await fetch(`${base}/`)).text();
+  for (const id of ['install', 'install-button', 'install-hint']) {
+    const tag = (html.match(new RegExp(`<[a-z]+\\s[^>]*id="${id}"[^>]*>`)) || [])[0];
+    if (!tag || !/\shidden(?=[\s>])/.test(tag)) fail(`install: index.html's #${id} ${tag ? 'has no hidden attribute' : 'is missing'}`);
+  }
+
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    // 1. Home page: hidden on load, shown by the event, and one tap prompts once and hides it.
+    const home = await visit(context, `${base}/`);
+    commonPageProblems('install (home)', home);
+    const onLoad = await installShown(home.page);
+    if (onLoad.button || onLoad.hint) fail(`install: on load the home page shows the ${onLoad.button ? 'button' : 'iPhone line'}, expected neither`);
+    if (!await fakeInstallPrompt(home.page)) fail('install: app.js did not call preventDefault() on beforeinstallprompt');
+    const afterEvent = await installShown(home.page);
+    if (!afterEvent.button) fail('install: the "Add to home screen" button did not appear after beforeinstallprompt');
+    if (afterEvent.hint) fail('install: the iPhone line shows on a non-iPhone browser');
+    const label = (await home.page.locator('#install-button').innerText().catch(() => '')).trim();
+    if (!/^add to home screen$/i.test(label)) fail(`install: the button reads "${label}", expected "Add to home screen"`);
+    if (await home.page.locator('#install-button').evaluate((b) => b.tagName !== 'BUTTON' || b.type !== 'button')) fail('install: the install control is not a <button type="button">');
+    if (afterEvent.button) {
+      await home.page.locator('#install-button').click();
+      await home.page.locator('#install-button').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+      const calls = await home.page.evaluate(() => window.installPromptCalls);
+      if (calls !== 1) fail(`install: tapping the button called prompt() ${calls} times, expected 1`);
+      if (await home.page.locator('#install-button').isVisible()) fail('install: the button is still visible after the prompt was answered');
+    }
+    await home.page.close();
+
+    // 2. A team page never shows it.
+    const team = await visit(context, `${base}/?team=${encodeURIComponent(teamSlug)}`);
+    commonPageProblems(`install (?team=${teamSlug})`, team);
+    await fakeInstallPrompt(team.page);
+    const onTeam = await installShown(team.page);
+    if (onTeam.button || onTeam.hint) fail(`install: ?team=${teamSlug} shows the install ${onTeam.button ? 'button' : 'iPhone line'} after beforeinstallprompt`);
+    await team.page.close();
+  } finally {
+    await context.close();
+  }
+
+  // 3. iPhone: the line instead of the button, on the home page only, and neither in the installed app.
+  const iphone = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  try {
+    const home = await visit(iphone, `${base}/`);
+    commonPageProblems('install (iPhone home)', home);
+    const shown = await installShown(home.page);
+    if (!shown.hint) fail('install: the iPhone line is not visible on the home page with an iPhone user agent');
+    if (shown.button) fail('install: the button shows with an iPhone user agent');
+    const hint = (await home.page.locator('#install-hint').innerText().catch(() => '')).trim();
+    if (hint !== 'On iPhone: tap the Share button, then "Add to Home Screen".') fail(`install: the iPhone line reads "${hint}"`);
+    await home.page.close();
+
+    const team = await visit(iphone, `${base}/?team=${encodeURIComponent(teamSlug)}`);
+    if ((await installShown(team.page)).hint) fail(`install: ?team=${teamSlug} shows the iPhone line`);
+    await team.page.close();
+  } finally {
+    await iphone.close();
+  }
+
+  // 4. Running installed (navigator.standalone on iPhone, display-mode: standalone elsewhere): nothing shows.
+  const standalone = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 } });
+  try {
+    await standalone.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'standalone', { get: () => true, configurable: true });
+      const realMatchMedia = window.matchMedia.bind(window);
+      window.matchMedia = (query) => (/display-mode:\s*standalone/.test(query)
+        ? { ...realMatchMedia(query), matches: true, media: query }
+        : realMatchMedia(query));
+    });
+    const home = await visit(standalone, `${base}/`);
+    await fakeInstallPrompt(home.page);
+    const shown = await installShown(home.page);
+    if (shown.button || shown.hint) fail(`install: the installed app shows the install ${shown.button ? 'button' : 'iPhone line'}`);
+    await home.page.close();
+  } finally {
+    await standalone.close();
+  }
+  info(`install: hidden on load; the button appears after beforeinstallprompt, one tap calls prompt() once and hides it; not on ?team=${teamSlug}; ` +
+    'an iPhone user agent gets the Share line instead; nothing shows when running installed');
+}
+
 // ---------------------------------------------------------------- main
 
 async function main() {
@@ -466,6 +568,7 @@ async function main() {
     await context.close();
 
     await checkMatchParam(browser, base, currentTeams, expected);
+    await checkInstall(browser, base, currentTeams[0].slug);
 
     const offlineTeam = currentTeams.find((t) => expected.get(t.slug).latest);
     if (offlineTeam) await checkOffline(browser, base, offlineTeam.slug, expected.get(offlineTeam.slug).latest.commentIds);
@@ -480,7 +583,7 @@ async function main() {
     process.exit(1);
   }
   console.log(`PASS check-p2: ${currentTeams.length} picker entries; ${currentTeams.length} team pages render (${withBriefing} briefings, ` +
-    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; manifest and sw.js valid; ` +
+    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; install button and iPhone line shown only where they should be; manifest and sw.js valid; ` +
     `no secrets in ${files.length} frontend files; ` +
     (isLive ? 'live domain serves HTTPS and redirects http:// and www.' : `live-domain checks NOT run (base ${base})`));
 }
