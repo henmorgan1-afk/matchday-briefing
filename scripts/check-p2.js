@@ -437,20 +437,22 @@ async function checkOffline(browser, base, slug, expectedIds) {
   }
 }
 
-// The install area (Revision 14): Bookmark + Install web app. Headless Chromium never fires
-// beforeinstallprompt itself, so the check dispatches a fake one, with a prompt() that counts its
-// calls and a userChoice with the outcome under test.
+// The install area (Revision 14): Bookmark + Install web app, whose tips open in a pop-up <dialog>
+// (Revision 15). Headless Chromium never fires beforeinstallprompt itself, so the check dispatches a
+// fake one, with a prompt() that counts its calls and a userChoice with the outcome under test.
 const INSTALL_UAS = {
   android: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
   iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1',
   windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
   mac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
 };
+const BOOKMARK_TITLE = 'Bookmark this page';
+const INSTALL_TITLE = 'Install the web app';
 const BOOKMARK_TIPS = {
   android: 'Tap ⋮ at the top right, then the ☆ star.',
   iphone: 'Tap Share, then "Add Bookmark".',
-  windows: 'Press Ctrl+D to bookmark this page.',
-  mac: 'Press ⌘+D to bookmark this page.',
+  windows: 'Press Ctrl+D.',
+  mac: 'Press ⌘+D.',
 };
 const INSTALL_TIPS = {
   android: 'Tap ⋮ at the top right, then "Install app".',
@@ -460,21 +462,36 @@ const INSTALL_TIPS = {
 };
 const REASSURANCE = 'Free · No app store · Remove any time';
 
-// Phones get touch, so a Mac user agent with no touch points is a Mac and not an iPad.
-const installContext = (browser, device, width = 390) => browser.newContext({
-  userAgent: INSTALL_UAS[device],
-  viewport: { width, height: 844 },
-  ...(device === 'android' || device === 'iphone' ? { hasTouch: true, isMobile: true } : {}),
-});
+// Phones get touch, so a Mac user agent with no touch points is a Mac and not an iPad. Every page
+// counts showModal() calls in window.tipDialogOpens, so "never opened" can be checked, not just
+// "closed now".
+async function installContext(browser, device, width = 390) {
+  const context = await browser.newContext({
+    userAgent: INSTALL_UAS[device],
+    viewport: { width, height: 844 },
+    ...(device === 'android' || device === 'iphone' ? { hasTouch: true, isMobile: true } : {}),
+  });
+  await context.addInitScript(() => {
+    const showModal = HTMLDialogElement.prototype.showModal;
+    window.tipDialogOpens = 0;
+    HTMLDialogElement.prototype.showModal = function countedShowModal() {
+      window.tipDialogOpens += 1;
+      return showModal.call(this);
+    };
+  });
+  return context;
+}
 
 const installState = (page) => page.evaluate(() => {
   const visible = (el) => Boolean(el && el.checkVisibility());
+  const dialog = document.getElementById('tip-dialog');
   return {
     area: visible(document.getElementById('install')),
     bookmark: visible(document.getElementById('bookmark-button')),
     install: visible(document.getElementById('install-button')),
     reassure: visible(document.querySelector('#install .install__reassure')),
-    tip: visible(document.getElementById('install-tip')),
+    dialog: Boolean(dialog && dialog.open),
+    opens: window.tipDialogOpens,
     footer: visible(document.getElementById('footer-iphone')),
   };
 });
@@ -506,20 +523,78 @@ async function waitInPage(page, label, what, fn, arg, found) {
   }
 }
 
-const tipNow = (page) => page.evaluate(() => {
-  const tip = document.getElementById('install-tip');
-  return tip.checkVisibility() ? JSON.stringify(tip.textContent) : 'the tip line hidden';
+const dialogNow = (page) => page.evaluate(() => {
+  const dialog = document.getElementById('tip-dialog');
+  if (!dialog) return 'no #tip-dialog';
+  if (!dialog.open) return '#tip-dialog closed';
+  const text = (id) => JSON.stringify(document.getElementById(id)?.textContent ?? null);
+  return `#tip-dialog open with heading ${text('tip-dialog-title')} and text ${text('tip-dialog-text')}`;
 });
 
-// Taps a button, then waits for the tip line to read `expected`. app.js fills the line a frame after
-// unhiding it.
-async function expectTip(page, label, id, expected) {
+const focusedId = (page) => page.evaluate(() => (document.activeElement && document.activeElement.id) || document.activeElement?.tagName || 'nothing');
+
+// Taps a button, then waits for the tip dialog to be open, modal and visible with this heading and
+// text, and checks that focus is on "Got it".
+async function expectDialog(page, label, id, title, text) {
   if (!await tap(page, id, label)) return false;
-  return waitInPage(page, label, `#install-tip to read "${expected}"`, (want) => {
-    const tip = document.getElementById('install-tip');
-    return !tip.hidden && tip.textContent === want;
-  }, expected, () => tipNow(page));
+  const opened = await waitInPage(page, label, `#tip-dialog to open with heading "${title}" and text "${text}"`, ([t, x]) => {
+    const dialog = document.getElementById('tip-dialog');
+    return Boolean(dialog && dialog.open && dialog.matches(':modal') && dialog.checkVisibility()
+      && document.getElementById('tip-dialog-title')?.textContent === t
+      && document.getElementById('tip-dialog-text')?.textContent === x);
+  }, [title, text], () => dialogNow(page));
+  if (!opened) return false;
+  const focused = await focusedId(page);
+  if (focused !== 'tip-dialog-close') fail(`install: ${label}: with the dialog open, focus is on ${focused}, expected "Got it" (#tip-dialog-close)`);
+  return true;
 }
+
+// Waits for the dialog to close after `how`, then checks focus went back to the button that opened it.
+async function expectClosed(page, label, how, openerId) {
+  const closed = await waitInPage(page, label, `#tip-dialog to close after ${how}`,
+    () => !document.getElementById('tip-dialog').open, null, () => dialogNow(page));
+  if (!closed) return false;
+  const focused = await focusedId(page);
+  if (focused !== openerId) fail(`install: ${label}: after ${how} closed the dialog, focus is on ${focused}, expected #${openerId}`);
+  return true;
+}
+
+// With the dialog open: the card is inside the viewport with at least 16px each side, no text is wider
+// than its box, and the heading, the text, each .tip-sym and "Got it" stay inside the card, with the
+// text clear of "Got it". The 22px symbols' glyph boxes are taller than a 17px line, so a symbol on
+// the last line reaches a pixel or two below the paragraph's own box; that's allowed, as long as it
+// stays in the card and clear of the button. Returns a summary.
+async function cardFits(page, label) {
+  await animationsDone(page, label);
+  const m = await page.evaluate(() => {
+    const dialog = document.getElementById('tip-dialog');
+    const card = dialog.getBoundingClientRect();
+    const close = document.getElementById('tip-dialog-close').getBoundingClientRect();
+    const inCard = (b) => b.left >= card.left && b.right <= card.right && b.top >= card.top && b.bottom <= card.bottom;
+    const parts = [
+      ...['tip-dialog-title', 'tip-dialog-text', 'tip-dialog-close'].map((id) => ({ name: `#${id}`, el: document.getElementById(id) })),
+      ...[...dialog.querySelectorAll('.tip-sym')].map((el) => ({ name: `the ${el.textContent} symbol`, el })),
+    ].map(({ name, el }) => {
+      const b = el.getBoundingClientRect();
+      return { name, wide: el.scrollWidth > el.clientWidth + 1, outside: !inCard(b), intoButton: el.id !== 'tip-dialog-close' && b.bottom > close.top };
+    });
+    return { left: card.left, right: window.innerWidth - card.right, top: card.top, bottom: window.innerHeight - card.bottom, width: card.width, scrolls: dialog.scrollHeight > dialog.clientHeight + 1, parts };
+  });
+  if (m.left < 16 || m.right < 16) fail(`install: ${label}: the tip card is ${m.left.toFixed(1)}px from the left and ${m.right.toFixed(1)}px from the right, expected at least 16px each side`);
+  if (m.top < 0 || m.bottom < 0) fail(`install: ${label}: the tip card runs off the top or bottom of the viewport`);
+  if (m.scrolls) fail(`install: ${label}: the tip card's content is taller than the card`);
+  for (const p of m.parts) {
+    if (p.wide) fail(`install: ${label}: ${p.name}'s text is wider than its box`);
+    if (p.outside) fail(`install: ${label}: ${p.name} sticks out of the tip card`);
+    if (p.intoButton) fail(`install: ${label}: ${p.name} reaches into "Got it"`);
+  }
+  return `${label}: ${Math.round(m.width)}px wide, ${Math.round(m.left)}px each side`;
+}
+
+// The open animation is 150 ms; measurements wait for it, so the card isn't caught mid-scale.
+const animationsDone = (page, label) => waitInPage(page, label, 'the open animation to finish',
+  () => document.getAnimations().every((a) => a.playState === 'finished'), null,
+  () => page.evaluate(() => `${document.getAnimations().length} animations running`));
 
 // Returns whether app.js called preventDefault() on it.
 const fakeInstallPrompt = (page, outcome) => page.evaluate((result) => {
@@ -546,22 +621,45 @@ async function withInstallPage(browser, device, url, label, fn, width) {
 
 async function checkInstall(browser, base, teamSlug) {
   const started = Date.now();
-  // The served HTML hides the area and the tip itself, so nothing flashes before app.js runs.
+  // The served HTML hides the area itself, so nothing flashes before app.js runs, and the dialog
+  // isn't open.
   const html = await (await fetch(`${base}/`)).text();
-  for (const id of ['install', 'install-tip']) {
-    const tag = (html.match(new RegExp(`<[a-z]+\\s[^>]*id="${id}"[^>]*>`)) || [])[0];
-    if (!tag || !/\shidden(?=[\s>])/.test(tag)) fail(`install: index.html's #${id} ${tag ? 'has no hidden attribute' : 'is missing'}`);
-  }
+  const tagOf = (id) => (html.match(new RegExp(`<[a-z]+\\s[^>]*id="${id}"[^>]*>`)) || [])[0];
+  const installTag = tagOf('install');
+  if (!installTag || !/\shidden(?=[\s>])/.test(installTag)) fail(`install: index.html's #install ${installTag ? 'has no hidden attribute' : 'is missing'}`);
+  const dialogTag = tagOf('tip-dialog');
+  if (!dialogTag || !/^<dialog\s/.test(dialogTag) || /\sopen(?=[\s>=])/.test(dialogTag)) fail(`install: index.html's #tip-dialog ${dialogTag ? `is ${dialogTag}, expected a <dialog> without open` : 'is missing'}`);
   const home = `${base}/`;
 
-  // 1. Android home page on load: both buttons and the reassurance line, no tip, no footer iPhone line.
+  // 1. Android home page on load: both buttons and the reassurance line, no tip line (gone in
+  //    Revision 15), the dialog closed and built as specified, and no footer iPhone line.
   await withInstallPage(browser, 'android', home, 'install (Android home)', async (page) => {
     const s = await installState(page);
     for (const [key, name] of [['area', 'install area'], ['bookmark', 'Bookmark button'], ['install', 'Install web app button'], ['reassure', 'reassurance line']]) {
       if (!s[key]) fail(`install: the ${name} is not visible on load (Android home page)`);
     }
-    if (s.tip) fail('install: the tip line is visible on load');
+    if (s.dialog || s.opens !== 0) fail('install: #tip-dialog is open on load, expected it closed');
     if (s.footer) fail("install: the footer's iPhone line shows alongside the install area");
+    const parts = await page.evaluate(() => {
+      const dialog = document.getElementById('tip-dialog');
+      const close = document.getElementById('tip-dialog-close');
+      const heading = dialog && document.getElementById(dialog.getAttribute('aria-labelledby'));
+      return {
+        tipLine: Boolean(document.getElementById('install-tip') || document.querySelector('.install__tip')),
+        dialog: Boolean(dialog),
+        labelledByH2InDialog: Boolean(heading && heading.tagName === 'H2' && dialog.contains(heading)),
+        paragraph: Boolean(dialog && dialog.contains(document.getElementById('tip-dialog-text'))),
+        close: close ? { inDialog: dialog.contains(close), button: close.tagName === 'BUTTON' && close.type === 'button', autofocus: close.autofocus, label: close.textContent.trim() } : null,
+      };
+    });
+    if (parts.tipLine) fail('install: the Revision 14 tip line (#install-tip / .install__tip) is still in the page');
+    if (!parts.dialog) fail('install: there is no #tip-dialog');
+    else {
+      if (!parts.labelledByH2InDialog) fail("install: #tip-dialog's aria-labelledby doesn't point at an <h2> inside it");
+      if (!parts.paragraph) fail('install: #tip-dialog has no #tip-dialog-text paragraph');
+      const c = parts.close;
+      if (!c || !c.inDialog || !c.button || !c.autofocus || c.label !== 'Got it') fail(`install: #tip-dialog-close is ${JSON.stringify(c)}, expected a <button type="button" autofocus> reading "Got it" inside the dialog`);
+    }
     const controls = await page.evaluate(() => ['bookmark-button', 'install-button'].map((id) => {
       const b = document.getElementById(id);
       return { id, label: b.textContent.trim(), button: b.tagName === 'BUTTON' && b.type === 'button' };
@@ -578,17 +676,33 @@ async function checkInstall(browser, base, teamSlug) {
     if (reassure !== REASSURANCE) fail(`install: the reassurance line (#install .install__reassure) reads ${JSON.stringify(reassure)}, expected "${REASSURANCE}"`);
   });
 
-  // 2. Each device's tips, with no saved event: Bookmark first, then Install web app, whose tip must
-  //    replace the Bookmark one.
+  // 2. Each device's tips, with no saved event. Every way of closing gets used on every device:
+  //    Bookmark, "Got it", Bookmark again (a second tap reopens it), Escape, then Install web app and a
+  //    click on the backdrop, 5px in from the viewport's top left. Focus goes back to the opener each time.
   for (const device of Object.keys(INSTALL_UAS)) {
     await withInstallPage(browser, device, home, `install (${device} tips)`, async (page) => {
-      if (!(await installState(page)).area) fail(`install: the install area is not visible on the home page with a ${device} user agent`);
-      await expectTip(page, `Bookmark on ${device}`, 'bookmark-button', BOOKMARK_TIPS[device]);
-      await expectTip(page, `Install web app on ${device} with no saved event`, 'install-button', INSTALL_TIPS[device]);
+      if (!(await installState(page)).area) {
+        fail(`install: the install area is not visible on the home page with a ${device} user agent`);
+        return;
+      }
+      const bookmark = [BOOKMARK_TITLE, BOOKMARK_TIPS[device]];
+      if (await expectDialog(page, `Bookmark on ${device}`, 'bookmark-button', ...bookmark)
+        && await tap(page, 'tip-dialog-close', `"Got it" on ${device}`)) {
+        await expectClosed(page, `"Got it" on ${device}`, '"Got it"', 'bookmark-button');
+      }
+      if (await expectDialog(page, `second Bookmark tap on ${device}`, 'bookmark-button', ...bookmark)) {
+        await page.keyboard.press('Escape');
+        await expectClosed(page, `Escape on ${device}`, 'Escape', 'bookmark-button');
+      }
+      if (await expectDialog(page, `Install web app on ${device} with no saved event`, 'install-button', INSTALL_TITLE, INSTALL_TIPS[device])) {
+        await page.mouse.click(5, 5);
+        await expectClosed(page, `backdrop click on ${device}`, 'a click on the backdrop', 'install-button');
+      }
     });
   }
 
-  // 3. A saved event, accepted: prompt() once, then the area hides and the footer line comes back.
+  // 3. A saved event, accepted: prompt() once and no dialog, then the area hides and the footer line
+  //    comes back.
   await withInstallPage(browser, 'android', home, 'install (accepted)', async (page) => {
     if (!await fakeInstallPrompt(page, 'accepted')) fail('install: app.js did not call preventDefault() on beforeinstallprompt');
     if (await tap(page, 'install-button', 'accepted prompt')) {
@@ -597,10 +711,13 @@ async function checkInstall(browser, base, teamSlug) {
     }
     const calls = await promptCalls(page);
     if (calls !== 1) fail(`install: Install web app with a saved event called prompt() ${calls} times, expected 1`);
-    if (!(await installState(page)).footer) fail("install: the footer's iPhone line (#footer-iphone) didn't come back after the install area hid");
+    const s = await installState(page);
+    if (s.dialog || s.opens !== 0) fail(`install: Install web app with a saved event opened #tip-dialog (${s.opens} times), expected prompt() only`);
+    if (!s.footer) fail("install: the footer's iPhone line (#footer-iphone) didn't come back after the install area hid");
   });
 
-  // 4. A saved event, dismissed: the buttons stay, and the next tap shows the tip, not prompt() again.
+  // 4. A saved event, dismissed: no dialog, the buttons stay, and the next tap opens the dialog
+  //    rather than calling prompt() again.
   await withInstallPage(browser, 'android', home, 'install (dismissed)', async (page) => {
     await fakeInstallPrompt(page, 'dismissed');
     if (await tap(page, 'install-button', 'dismissed prompt')) {
@@ -610,8 +727,8 @@ async function checkInstall(browser, base, teamSlug) {
     await page.waitForTimeout(200); // let app.js read userChoice
     const s = await installState(page);
     if (!s.bookmark || !s.install) fail('install: dismissed prompt: #bookmark-button and #install-button hid, expected both to stay visible');
-    if (s.tip) fail('install: dismissed prompt: #install-tip showed alongside the browser prompt, expected it hidden');
-    await expectTip(page, 'next tap after a dismissal', 'install-button', INSTALL_TIPS.android);
+    if (s.dialog || s.opens !== 0) fail('install: dismissed prompt: #tip-dialog opened alongside the browser prompt, expected it closed');
+    await expectDialog(page, 'next tap after a dismissal', 'install-button', INSTALL_TITLE, INSTALL_TIPS.android);
     const calls = await promptCalls(page);
     if (calls !== 1) fail(`install: after a dismissal, prompt() was called ${calls} times in all, expected 1`);
   });
@@ -630,11 +747,14 @@ async function checkInstall(browser, base, teamSlug) {
   const teamUrl = `${base}/?team=${encodeURIComponent(teamSlug)}`;
   await withInstallPage(browser, 'android', teamUrl, `install (?team=${teamSlug})`, async (page) => {
     await fakeInstallPrompt(page, 'accepted');
-    if ((await installState(page)).area) fail(`install: ?team=${teamSlug} shows the install area`);
+    const s = await installState(page);
+    if (s.area) fail(`install: ?team=${teamSlug} shows the install area`);
+    if (s.dialog || s.opens !== 0) fail(`install: ?team=${teamSlug} opened #tip-dialog`);
   });
   await withInstallPage(browser, 'iphone', teamUrl, `install (iPhone ?team=${teamSlug})`, async (page) => {
     const s = await installState(page);
     if (s.area) fail(`install: ?team=${teamSlug} shows the install area with an iPhone user agent`);
+    if (s.dialog || s.opens !== 0) fail(`install: ?team=${teamSlug} opened #tip-dialog with an iPhone user agent`);
     if (!s.footer) fail(`install: ?team=${teamSlug} with an iPhone user agent hides the footer's iPhone line`);
   });
 
@@ -655,6 +775,7 @@ async function checkInstall(browser, base, teamSlug) {
       await fakeInstallPrompt(v.page, 'accepted');
       const s = await installState(v.page);
       if (s.area) fail(`install: the installed app (${device === 'iphone' ? 'navigator.standalone' : 'display-mode: standalone'}) shows the install area`);
+      if (s.dialog || s.opens !== 0) fail(`install: the installed app (${device}) opened #tip-dialog`);
       if (!s.footer) fail(`install: the installed app (${device}) hides the footer's iPhone line`);
       commonPageProblems(`install (${device} installed)`, v);
     } finally {
@@ -662,8 +783,10 @@ async function checkInstall(browser, base, teamSlug) {
     }
   }
 
-  // 8. At 360px and 390px: each label on one line, and the two buttons side by side on one row.
+  // 8. At 360px and 390px: each label on one line, the two buttons side by side on one row, and the
+  //    tip card inside the viewport.
   const sizes = [];
+  const cards = [];
   for (const width of [360, 390]) {
     await withInstallPage(browser, 'android', home, `install (${width}px)`, async (page) => {
       await waitInPage(page, `${width}px`, 'document.fonts to finish loading (the label widths depend on Oswald)',
@@ -683,12 +806,27 @@ async function checkInstall(browser, base, teamSlug) {
       if (Math.abs(m.bookmark.top - m.install.top) > 1 || m.bookmark.right > m.install.left) fail(`install: at ${width}px the two buttons aren't side by side on one row`);
       if (m.scroll > 0) fail(`install: at ${width}px the home page scrolls sideways by ${m.scroll}px`);
       sizes.push(`${width}px: ${Math.round(m.bookmark.width)}+${Math.round(m.install.width)}px wide, ${Math.round(m.install.height)}px tall`);
+
+      // Both Android tips' cards fit the viewport with 16px or more each side, and nothing overflows.
+      for (const [id, title, text] of [['bookmark-button', BOOKMARK_TITLE, BOOKMARK_TIPS.android], ['install-button', INSTALL_TITLE, INSTALL_TIPS.android]]) {
+        if (!await expectDialog(page, `${width}px card`, id, title, text)) continue;
+        cards.push(await cardFits(page, `${width}px, ${title}`));
+        await page.keyboard.press('Escape');
+        await expectClosed(page, `${width}px card`, 'Escape', id);
+      }
     }, width);
   }
+  // The longest tip, desktop install, in a 360px-wide desktop window.
+  await withInstallPage(browser, 'windows', home, 'install (360px desktop card)', async (page) => {
+    if (await expectDialog(page, '360px desktop card', 'install-button', INSTALL_TITLE, INSTALL_TIPS.windows)) {
+      cards.push(await cardFits(page, '360px, desktop install'));
+    }
+  }, 360);
 
-  info(`install: Bookmark + Install web app and the reassurance line show on load (footer iPhone line hidden); Bookmark and Install tips are right for ${Object.keys(INSTALL_UAS).join(', ')}; ` +
-    `a saved event prompts once, hides the area when accepted and falls back to the tip after a dismissal; appinstalled hides it; shown on ?team=${UNKNOWN_SLUG}, not on ?team=${teamSlug} or when installed; ` +
-    `one row of single-line buttons (${sizes.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
+  info(`install: Bookmark + Install web app and the reassurance line show on load (footer iPhone line hidden, no tip line, dialog closed); ` +
+    `the Bookmark and Install tip dialogs are right for ${Object.keys(INSTALL_UAS).join(', ')}, focus "Got it", reopen on a second tap, and close with "Got it", Escape and the backdrop, returning focus; ` +
+    `a saved event prompts once with no dialog, hides the area when accepted and falls back to the dialog after a dismissal; appinstalled hides it; shown on ?team=${UNKNOWN_SLUG}, not on ?team=${teamSlug} or when installed (no dialog either); ` +
+    `one row of single-line buttons (${sizes.join('; ')}); cards fit (${cards.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
 // ---------------------------------------------------------------- main
@@ -735,7 +873,7 @@ async function main() {
     process.exit(1);
   }
   console.log(`PASS check-p2: ${currentTeams.length} picker entries; ${currentTeams.length} team pages render (${withBriefing} briefings, ` +
-    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; Bookmark + Install web app shown only where they should be, with the right tips; manifest and sw.js valid; ` +
+    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; Bookmark + Install web app shown only where they should be, with the right tip pop-ups; manifest and sw.js valid; ` +
     `no secrets in ${files.length} frontend files; ` +
     (isLive ? 'live domain serves HTTPS and redirects http:// and www.' : `live-domain checks NOT run (base ${base})`));
 }

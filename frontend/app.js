@@ -27,7 +27,9 @@
   const installEl = document.getElementById('install');
   const bookmarkButton = document.getElementById('bookmark-button');
   const installButton = document.getElementById('install-button');
-  const installTip = document.getElementById('install-tip');
+  const tipDialog = document.getElementById('tip-dialog');
+  const tipTitle = document.getElementById('tip-dialog-title');
+  const tipText = document.getElementById('tip-dialog-text');
   const footerIphone = document.getElementById('footer-iphone');
 
   // iPhone Safari only applies :active (the team tiles' pressed colour) when a touchstart listener exists.
@@ -190,23 +192,35 @@
     updateInstall();
   }
 
-  // ---------------------------------------------------------------- install (Revision 14)
+  // ---------------------------------------------------------------- install (Revisions 14 and 15)
 
-  // Bookmark + Install web app, under the team list. A page can't make a bookmark, so Bookmark shows a
-  // tip. Install web app replays beforeinstallprompt (Chrome, Edge, Samsung Internet) when the browser
-  // has fired it, and otherwise shows a tip too. Neither shows on team pages or in the installed app.
-  const BOOKMARK_TIPS = {
-    android: 'Tap ⋮ at the top right, then the ☆ star.',
-    ios: 'Tap Share, then "Add Bookmark".',
-    mac: 'Press ⌘+D to bookmark this page.',
-    desktop: 'Press Ctrl+D to bookmark this page.',
-  };
+  // Bookmark + Install web app, under the team list. A page can't make a bookmark, so Bookmark opens a
+  // tip in a pop-up card. Install web app replays beforeinstallprompt (Chrome, Edge, Samsung Internet)
+  // when the browser has fired it, and otherwise opens a tip too. Neither shows on team pages or in
+  // the installed app.
+  //
+  // In tip text, {x} marks a symbol (⋮, ☆, ⌘), which goes in a .tip-sym span: the serif font hasn't
+  // got them, so they're drawn larger in the system font.
   const DESKTOP_INSTALL_TIP = "Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it.";
-  const INSTALL_TIPS = {
-    android: 'Tap ⋮ at the top right, then "Install app".',
-    ios: 'Tap Share, then "Add to Home Screen".',
-    mac: DESKTOP_INSTALL_TIP,
-    desktop: DESKTOP_INSTALL_TIP,
+  const TIPS = {
+    bookmark: {
+      title: 'Bookmark this page',
+      text: {
+        android: 'Tap {⋮} at the top right, then the {☆} star.',
+        ios: 'Tap Share, then "Add Bookmark".',
+        mac: 'Press {⌘}+D.',
+        desktop: 'Press Ctrl+D.',
+      },
+    },
+    install: {
+      title: 'Install the web app',
+      text: {
+        android: 'Tap {⋮} at the top right, then "Install app".',
+        ios: 'Tap Share, then "Add to Home Screen".',
+        mac: DESKTOP_INSTALL_TIP,
+        desktop: DESKTOP_INSTALL_TIP,
+      },
+    },
   };
 
   let installPrompt = null;
@@ -231,12 +245,30 @@
     footerIphone.hidden = !installEl.hidden;
   }
 
-  // One tip at a time, replacing any earlier one. A live region that has only just been unhidden isn't
-  // always announced, so the text goes in a frame later.
-  function showTip(text) {
-    installTip.hidden = false;
-    requestAnimationFrame(() => { installTip.textContent = text; });
+  // Every tap opens the card afresh with that button's tip. Focus goes to "Got it" (autofocus) and,
+  // when the card closes, back to the button that opened it.
+  let tipOpener = null;
+
+  function openTip(kind, opener) {
+    const tip = TIPS[kind];
+    tipTitle.textContent = tip.title;
+    tipText.replaceChildren(...tip.text[device()].split(/\{(.)\}/)
+      .map((part, i) => (i % 2 ? el('span', { class: 'tip-sym', text: part }) : part))
+      .filter(Boolean));
+    tipOpener = opener;
+    if (!tipDialog.open) tipDialog.showModal();
   }
+
+  // "Got it", Escape and Android's back gesture close it natively or through here; so does a tap on
+  // the dimmed backdrop, the only place a click's target is the dialog itself.
+  document.getElementById('tip-dialog-close').addEventListener('click', () => tipDialog.close());
+  tipDialog.addEventListener('click', (event) => {
+    if (event.target === tipDialog) tipDialog.close();
+  });
+  tipDialog.addEventListener('close', () => {
+    if (tipOpener && tipOpener.isConnected) tipOpener.focus();
+    tipOpener = null;
+  });
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
@@ -249,14 +281,14 @@
     updateInstall();
   });
 
-  bookmarkButton.addEventListener('click', () => showTip(BOOKMARK_TIPS[device()]));
+  bookmarkButton.addEventListener('click', () => openTip('bookmark', bookmarkButton));
 
   // The saved event can only be used once, so it's cleared before prompting. After a dismissal the
   // buttons stay, and later taps get the tip.
   installButton.addEventListener('click', async () => {
     const event = installPrompt;
     if (!event) {
-      showTip(INSTALL_TIPS[device()]);
+      openTip('install', installButton);
       return;
     }
     installPrompt = null;
@@ -266,7 +298,7 @@
       ({ outcome } = await event.userChoice);
     } catch (err) {
       console.warn('Install prompt failed:', err);
-      showTip(INSTALL_TIPS[device()]);
+      openTip('install', installButton);
     }
     if (outcome === 'accepted') {
       installDone = true;

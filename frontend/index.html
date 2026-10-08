@@ -25,15 +25,24 @@
     <p class="status">Loading…</p>
   </main>
 
-  <!-- Pages with the team list only; app.js shows it, and fills the tip line (Revision 14). -->
+  <!-- Pages with the team list only; app.js shows it (Revision 14). -->
   <div id="install" class="install" hidden>
     <div class="install__buttons">
       <button type="button" id="bookmark-button" class="install__button install__button--secondary">Bookmark</button>
       <button type="button" id="install-button" class="install__button">Install web app</button>
     </div>
     <p class="install__reassure">Free · No app store · Remove any time</p>
-    <p id="install-tip" class="install__tip" aria-live="polite" hidden></p>
   </div>
+
+  <!-- The Bookmark and install tips; app.js fills it and opens it with showModal() (Revision 15).
+       The padding is on the inner div, so a click whose target is the dialog itself is on the backdrop. -->
+  <dialog id="tip-dialog" class="tip-dialog" aria-labelledby="tip-dialog-title">
+    <div class="tip-dialog__body">
+      <h2 id="tip-dialog-title" class="tip-dialog__title"></h2>
+      <p id="tip-dialog-text" class="tip-dialog__text"></p>
+      <button type="button" id="tip-dialog-close" class="install__button tip-dialog__close" autofocus>Got it</button>
+    </div>
+  </dialog>
 
   <footer class="footer">
     <p>Match data via <a href="https://www.football-data.org/">football-data.org</a></p>

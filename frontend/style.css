@@ -1,7 +1,8 @@
 /* Ludicrous Display (SPEC.md §4), in design direction A, "Matchday programme" (Revision 10). Every
    colour is one of the tokens in :root (six from Revision 10, four tile colours from Revision 11,
-   the install button's pressed colour from Revision 13), apart from the pressed tile shadow's rgba
-   fallback for browsers without color-mix. --paper is also the manifest's theme_color and
+   the install button's pressed colour from Revision 13), apart from three shades of --ink written as
+   rgba: the pressed tile shadow's fallback for browsers without color-mix, and the tip pop-up's
+   shadow and backdrop (Revision 15). --paper is also the manifest's theme_color and
    background_color, and the theme-color meta tag. The fonts are self-hosted in fonts/ (SIL OFL 1.1,
    see fonts/OFL.txt). */
 
@@ -621,11 +622,76 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
   font: 400 14px/1.4 var(--serif);
 }
 
-.install__tip {
-  max-width: 320px;
-  margin: 10px auto 0;
+/* ---------------------------------------------------------------- tip pop-up (Revision 15) */
+
+/* A native <dialog>, opened with showModal() and centred by the browser. The padding is on
+   .tip-dialog__body, so the dialog's own box is the card's edge: app.js treats a click whose target
+   is the dialog itself as a tap on the backdrop. */
+/* 100% rather than 100vw: on desktop, 100vw includes the scrollbar, which can leave a narrow window's
+   card under 16px from the edge. */
+.tip-dialog {
+  width: min(320px, calc(100% - 32px));
+  max-width: none;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--card);
   color: var(--ink);
-  font: 400 15px/1.4 var(--serif);
+  box-shadow: 0 8px 24px rgba(29, 27, 23, 0.25); /* --ink at 25% */
+}
+
+/* --ink at 55%. Written out, because older browsers don't pass custom properties to ::backdrop. */
+.tip-dialog::backdrop { background: rgba(29, 27, 23, 0.55); }
+
+.tip-dialog__body { padding: 24px 20px 20px; }
+
+.tip-dialog__title {
+  margin: 0 0 12px;
+  font: 600 18px/1.2 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* Balanced, so a two-line tip doesn't leave one word ("star.") alone on the second line. */
+.tip-dialog__text {
+  margin: 0;
+  font: 400 17px/1.45 var(--serif);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ⋮, ☆ and ⌘: the serif font hasn't got them, so they come from the system font, larger. */
+.tip-sym {
+  color: var(--accent);
+  font: 700 22px/1 system-ui, sans-serif;
+  vertical-align: -2px;
+}
+
+/* "Got it" is a primary .install__button, full width. */
+.tip-dialog__close {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+}
+
+/* The page behind the card doesn't scroll. No scrollbar-gutter: the backdrop doesn't cover a reserved
+   gutter, which left an undimmed strip down the right on desktop. */
+html:has(dialog[open]) { overflow: hidden; }
+
+.tip-dialog[open] { animation: tip-in 150ms ease-out; }
+.tip-dialog[open]::backdrop { animation: tip-fade 150ms ease-out; }
+
+@keyframes tip-in {
+  from { opacity: 0; transform: scale(0.96); }
+}
+
+@keyframes tip-fade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-dialog[open], .tip-dialog[open]::backdrop { animation: none; }
 }
 
 /* ---------------------------------------------------------------- footer and toast */

@@ -654,6 +654,8 @@ The project owner asked for a one-tap install button on the home page. Before th
 
 ### Revision 14 (8 Oct 2026, Bookmark + Install web app)
 
+*(Partly superseded by Revision 15: the tips now open in a pop-up card (`#tip-dialog`) instead of the tip line, which is gone, and the two desktop Bookmark tips are shorter. The buttons, the reassurance line, device detection, the install prompt, where the area shows and the footer rule are unchanged.)*
+
 The project owner replaced Revision 13's single install button with a pair: Bookmark and Install web app. A website can't create a bookmark, so Bookmark shows a short tip for the tester's device. Install web app opens the browser's real install dialog where the browser allows it, and otherwise shows a tip. Its label is close to what the browser dialogs say ("Install app"), so tapping it doesn't feel like a bait-and-switch. The work is on branch `install-pair`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change. Revision 13, §4, §6 and §9 are updated to match; where Revision 13 differs, this note takes precedence.
 
 1. **Layout.** The area is where Revision 13 put it: between `<main>` and the footer, below the team list, with the same 8px top and 24px bottom margins. It holds:
@@ -728,6 +730,79 @@ The project owner replaced Revision 13's single install button with a pair: Book
 
       The install step took 7.3 seconds against 4.7 when passing, so the failure cost one 3-second wait. Before, it hung for 30 seconds and then stopped the run.
     - `install-pair-desktop.png` is retaken after tapping Install web app, showing the new tip.
+
+### Revision 15 (8 Oct 2026, tip pop-up)
+
+The project owner found Revision 14's tip line easy to miss. Tapping a button a second time also changed nothing, so the button looked broken. Every tip now opens a pop-up card that can't be missed and reopens on every tap. The work is on branch `tip-dialog`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change. Revision 14, §4, §6 and §9 are updated to match; where Revision 14 differs, this note takes precedence.
+
+1. **What's gone and what stays.** The tip line (`#install-tip`), its `aria-live` and its unhide-then-fill code are removed. Both buttons and the reassurance line are exactly as in Revision 14.
+2. **The card.** One native `<dialog id="tip-dialog">` sits after the install area, outside it, with `aria-labelledby="tip-dialog-title"`. It holds:
+   - an `<h2 id="tip-dialog-title">` heading;
+   - one paragraph of instructions (`#tip-dialog-text`);
+   - a "Got it" `<button type="button" autofocus>` (`#tip-dialog-close`) that closes it.
+
+   `app.js` opens it with `showModal()`, so the page behind is inert. Focus goes to "Got it". The heading and text are set with `textContent`, and the symbols are built as elements, never `innerHTML`.
+
+   The card's padding is on an inner `<div class="tip-dialog__body">`, not the dialog, so the dialog's own box is the card's edge. As a result, a click whose target is the dialog element itself can only be on the backdrop. With the padding on the dialog, a tap in the card's own padding would also have closed it.
+3. **Content.** The heading, then the text.
+   - **Bookmark** ("Bookmark this page"):
+     - Android: Tap ⋮ at the top right, then the ☆ star.
+     - iOS: Tap Share, then "Add Bookmark".
+     - Mac desktop: Press ⌘+D.
+     - Other desktop: Press Ctrl+D.
+
+     The desktop texts are shorter than Revision 14's ("…to bookmark this page"), because the heading now says that.
+   - **Install web app** ("Install the web app"), only when there's no saved `beforeinstallprompt` event:
+     - iOS: Tap Share, then "Add to Home Screen".
+     - Android: Tap ⋮ at the top right, then "Install app".
+     - Desktop, Mac included: Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it.
+   - With a saved event, Install web app behaves as in Revision 14: `prompt()`, and no card. After a dismissal, and if `prompt()` throws, it opens the card.
+   - In `app.js`'s tip strings, `{⋮}`, `{☆}` and `{⌘}` mark the symbols. Each becomes a `<span class="tip-sym">`, so the paragraph's text reads exactly as above.
+4. **Closing.** The card closes with:
+   - "Got it";
+   - Escape (native);
+   - a tap on the dimmed backdrop (a click whose target is the dialog itself);
+   - Android's back gesture, which current Chrome treats as a close request for a modal dialog (native, with nothing added).
+
+   Each time, focus returns to the button that opened it. The native return isn't reliable on iOS, where tapping a button doesn't focus it, so `app.js` focuses the opener on `close`. Every tap on Bookmark or Install web app reopens the card with that button's content.
+5. **Scrolling.** `html:has(dialog[open]) { overflow: hidden; }` stops the page behind from scrolling. There's no `scrollbar-gutter: stable`: a first build had it, to stop the page shifting sideways when the desktop scrollbar goes, but the backdrop doesn't cover a reserved gutter. That left an undimmed cream strip down the right of the screen. A shift under the dark backdrop is less noticeable.
+6. **Style.**
+   - **Card:** `--card` background, a 1px `--rule` border, 12px corners, 24px 20px 20px padding (on the inner div) and `--ink` text. It's centred by the browser.
+   - **Card width:** `min(320px, calc(100% - 32px))`, not `100vw`. In a 360px-wide *desktop* window, `100vw` includes the scrollbar, and the check found the card 12.5px from the left edge. For a modal dialog, `100%` is the visible viewport, so it's the same as `100vw` on phones (whose scrollbars overlay the page) and correct on desktop.
+   - **Card shadow:** `0 8px 24px rgba(29, 27, 23, 0.25)`, which is `--ink` at 25%.
+   - **Backdrop:** `rgba(29, 27, 23, 0.55)`, `--ink` at 55%. Both are written as `rgba`, because older browsers don't pass custom properties to `::backdrop`. With the Revision 11 fallback, they're the three non-token colours in `style.css`, and its header comment says so.
+   - **Heading:** Oswald 600, 18px, uppercase, 0.04em letter-spacing, 12px below it, centred.
+   - **Text:** Source Serif 4, 17px, line-height 1.45, centred, no margin, with `text-wrap: balance`. Without it, the 320px card left "star." and "Screen"." alone on the second line.
+   - **`.tip-sym`:** 22px, weight 700, `--accent`, in `system-ui, sans-serif`, `vertical-align: -2px`. The serif font hasn't got these symbols.
+   - **"Got it":** the primary `.install__button` (Install web app's look), full width, at least 48px tall, 20px above it, with the 2px `--ink` focus outline offset 2px. After a tap it shows no focus ring (`:focus-visible` is false), only with the keyboard.
+   - **Opening:** the card fades in and scales from 0.96 to 1 over 150ms, and the backdrop fades in with it. Both are off under `prefers-reduced-motion: reduce`. The animation replays on every open, because a closed dialog is `display: none`.
+7. **Check.** `check-p2.js`'s Revision 14 tip-line checks are replaced; §9 is updated to match. Every install page counts `showModal()` calls (an init script wraps `HTMLDialogElement.prototype.showModal`). So "the card never opened" is checked directly, not just "the card is closed now". The check confirms that:
+   - the served `index.html` has `#tip-dialog` as a `<dialog>` without `open`;
+   - on load, there's no tip line (`#install-tip` or `.install__tip`), and the dialog is closed and has never been opened. Its `aria-labelledby` points at an `<h2>` inside it, it has the text paragraph, and "Got it" is a `<button type="button" autofocus>` inside it;
+   - for Android, iPhone, Windows and Mac user agents, in turn:
+     - Bookmark opens the card: open, `:modal`, visible, with that device's exact heading and text, and focus on "Got it";
+     - "Got it" closes it, and focus goes back to Bookmark;
+     - a second Bookmark tap reopens it, and Escape closes it, with focus back on Bookmark;
+     - Install web app (no saved event) opens it with the exact install heading and text;
+     - a click 5px from the viewport's top left (the backdrop) closes it, with focus back on Install web app;
+   - with a fake `beforeinstallprompt`, `accepted`: `prompt()` once, the card never opens, and the area hides;
+   - with `dismissed`: `prompt()` once and no card. The next tap opens the install card, and `prompt()` isn't called again;
+   - on a team page (Android with a saved event, and iPhone), and with `display-mode: standalone` or `navigator.standalone` faked: no install area, and the card never opens;
+   - at 360px and 390px (Android, both tips), and for the longest tip, the desktop install one, in a 360px desktop window, once the open animation has finished:
+     - the card is inside the viewport with at least 16px each side, and fits top to bottom;
+     - no text is wider than its box;
+     - the heading, the text, each `.tip-sym` and "Got it" all stay inside the card, and the text stays clear of "Got it".
+
+     The 22px symbols' glyph boxes are taller than a 17px line, so a ☆ on the last line reaches 1.4px below the paragraph's own box, into the 20px gap above "Got it". The check allows that rather than test each element's vertical overflow.
+   - Every wait still gives up after 3 seconds, with a message naming the element, what was expected and what was found. For example: `second Bookmark tap on android: gave up after 3 s waiting for #tip-dialog to open with heading "Bookmark this page" and text "Tap ⋮ at the top right, then the ☆ star."; found #tip-dialog closed`.
+   - The button checks (labels, one row, single lines), `appinstalled`, the unknown-team page and the footer line are kept from Revision 14.
+8. **Findings** (8 Oct 2026).
+   - `check-p2.js --base http://localhost:8080` passes, with everything from before. On phones the card is 320px wide, 20px from each side at 360px and 35px at 390px. The install step takes about 6.7 seconds and the whole run about 16 seconds.
+   - The new checks caught two real problems in the first build, both fixed:
+     - In a 360px desktop window, the card was 12.5px from the left edge, because of `100vw`, now `100%`.
+     - Once text balancing moved the ☆ onto the last line, the first version of the fit check flagged it. That turned out to be the symbol's glyph box, not visible overflow, so the check now tests what the brief asks (item 7).
+   - A deliberately broken copy, whose `openTip()` opened the card only once per page, so a second tap did nothing, failed with 10 clear problems. Each was a 3-second wait for `#tip-dialog` to open with the expected heading and text, finding it closed: the second Bookmark tap and the Install tap on each of the four user agents, and the Install card at 360px and 390px. The run took 47 seconds against 16, about 3 seconds per failure.
+   - Screenshots, in `review/` (local only): `tip-dialog-android-bookmark.png` (Android, 390px, Bookmark), `tip-dialog-android-360.png` (Android, 360px, Bookmark), `tip-dialog-iphone-install.png` (iPhone, 390px, Install web app) and `tip-dialog-desktop.png` (Windows, 1280px, Bookmark). They were taken scrolled to the bottom, so the buttons show dimmed behind the card.
 
 ## 1. Architecture
 
@@ -1380,8 +1455,9 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 - **Existing mock-up:** the look-and-feel prototype published earlier on claude.ai is a visual reference only. Its sample lines include scorers, specific incidents and match-specific banter that §3.3 now forbids, so don't copy its content or show it to testers as representative of real output.
 - No ad space is reserved anywhere in this layout; ad placement is designed when V1 actually implements ads.
 - **Install (Revision 14):** at the bottom of the home page (and the unknown-team page), below the team list, two buttons sit side by side: "Bookmark" and "Install web app", with "Free · No app store · Remove any time" under them.
-  - Bookmark shows a short tip for the device, because a page can't create a bookmark.
-  - Install web app opens the browser's own install prompt when the browser has fired `beforeinstallprompt` (Android and desktop Chrome, Edge, Samsung Internet), and otherwise shows a tip for the device (iPhone and iPad have no install prompt).
+  - Bookmark opens a pop-up card with a short tip for the device, because a page can't create a bookmark (Revision 15).
+  - Install web app opens the browser's own install prompt when the browser has fired `beforeinstallprompt` (Android and desktop Chrome, Edge, Samsung Internet). Otherwise it opens the same card with an install tip for the device (iPhone and iPad have no install prompt).
+  - The card closes with "Got it", Escape, a tap on the backdrop or Android's back gesture, and reopens on every tap.
   - Neither shows on team pages or when the site is already running installed.
   - The footer's one-line iPhone help ("On iPhone: Share → Add to Home Screen") is hidden while the buttons show, and shows everywhere else.
 - **Installed look:** `display: standalone`, theme and background colours both `#F2EADB` (the page colour, `--paper`), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
@@ -1401,7 +1477,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
 - Ads/monetisation, including reserved layout space
 - Tone picker, difficulty levels, push notifications, widgets, share-sheet integration (V2/V3). The PWA makes web push possible later, but no push is built in P0–P5.
 - A Play Store listing (Trusted Web Activity wrap) and a Capacitor native shell. Both are later, gated steps (§10), not part of this build.
-- A custom install banner or pop-up. The home page's Bookmark and Install web app buttons (Revision 14) stay at the bottom of the page. Install web app only replays the browser's own prompt or shows a tip.
+- A custom install banner, or a pop-up that appears on its own. The home page's Bookmark and Install web app buttons (Revision 14) stay at the bottom of the page. The tip card (Revision 15) opens only when a tester taps one of them. Install web app only replays the browser's own prompt or opens that card.
 - Multi-sport (V4)
 - Quiz/knowledge-testing (cut permanently, per design doc)
 - Verified historical `BANTER` callbacks (parked — needs a future historical data source)
@@ -1476,14 +1552,14 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
 - **`scripts/check-p2.js`:**
   - `https://didyouseethatludicrousdisplaylastnight.co.uk/` returns 200 over HTTPS, and the `http://` and `www.` versions both redirect to it.
   - Using Playwright with headless Chromium (a plain HTTP fetch can't see what `app.js` renders): the homepage shows one picker entry per current-season row in `teams`, and loading `?team=<slug>` for every one of those slugs renders either at least one comment card or the "No briefing yet" message — never a blank page, an error state, or a browser console error. `?team=not-a-real-team` renders "We don't know that team".
-  - **Install (Revision 14):**
-    - On the Android home page, Bookmark, Install web app and the reassurance line are visible on load, with exact labels. The tip and the footer's iPhone line are hidden.
-    - Bookmark shows the exact tip for Android, iPhone, Windows and Mac user agents. Install web app with no saved event shows the exact tip for each, with no console errors.
-    - With a fake `beforeinstallprompt`, a tap calls `prompt()` exactly once. `{ outcome: 'accepted' }` hides the area. `{ outcome: 'dismissed' }` leaves the buttons, and the next tap shows the tip without calling `prompt()` again.
+  - **Install (Revisions 14 and 15):**
+    - On the Android home page, Bookmark, Install web app and the reassurance line are visible on load, with exact labels, and the footer's iPhone line is hidden. There's no tip line, and `#tip-dialog` is closed.
+    - Bookmark opens the tip card with the exact heading and text for Android, iPhone, Windows and Mac user agents, with focus on "Got it". "Got it", Escape and a backdrop click each close it, with focus back on the opener, and a second tap reopens it. Install web app with no saved event opens the card with the exact install heading and text. There are no console errors.
+    - With a fake `beforeinstallprompt`, a tap calls `prompt()` exactly once and the card doesn't open. `{ outcome: 'accepted' }` hides the area. `{ outcome: 'dismissed' }` leaves the buttons, and the next tap opens the card without calling `prompt()` again.
     - `appinstalled` hides the area.
-    - The unknown-team page shows the area. A team page doesn't, and with an iPhone user agent it shows the footer's iPhone line.
-    - Running installed (`display-mode: standalone` or `navigator.standalone` stubbed) shows no area.
-    - At 360px and 390px wide, both buttons are single-line (under 56px tall) and sit side by side on one row.
+    - The unknown-team page shows the area. A team page doesn't, and the card never opens there. With an iPhone user agent, a team page shows the footer's iPhone line.
+    - Running installed (`display-mode: standalone` or `navigator.standalone` stubbed) shows no area, and the card never opens.
+    - At 360px and 390px wide, both buttons are single-line (under 56px tall) and sit side by side on one row. The card fits the viewport with at least 16px each side, and no text overflows it.
   - `manifest.webmanifest` has `name`, `start_url`, `display: "standalone"` and 192px + 512px icons. Every manifest icon returns HTTP 200 and its real pixel size matches its `sizes`, and exactly one is `maskable`. The `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` linked from `index.html` each return 200, and the two PNGs are 32×32 and 180×180 (Revision 12). `sw.js` returns 200 with a JavaScript content type.
   - **Secrets check:** fetches every deployed file under `frontend/` (HTML, JS, CSS, manifest) and fails if the value of `FOOTBALL_DATA_API_KEY`, `ANTHROPIC_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` appears in any of them.
 - **`scripts/check-p3.js --match <id>`:**
