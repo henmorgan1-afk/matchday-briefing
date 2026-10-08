@@ -7,3 +7,7 @@ Build reference: `SPEC.md`. These are working rules for Claude Code sessions in 
 - When you stop something you started (a local server, a watcher, a test browser), stop only that process, by its process ID or its background task ID.
 - Never stop processes by name or type: no `taskkill /IM`, `Stop-Process -Name`, `pkill`, `killall` or anything else that stops every process of one kind. Other programs on this machine may be running the same executable.
 - The simplest way: start long-running commands as background tasks, and stop them with their task ID. Otherwise note the PID when you start the process, and use `taskkill /PID <pid>` or `Stop-Process -Id <pid>`.
+
+## Running commands
+
+- Run commands plainly. Don't wrap them in timers, `$(...)` subexpressions or `(Get-Date)` arithmetic, because those always trigger a permission prompt. If timing matters, have the script itself print how long it took.
