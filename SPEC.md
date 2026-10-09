@@ -852,6 +852,29 @@ Implementation notes, within those decisions:
 - **`BANTER`.** Man City's three are all friendly digs at Sunderland's fans, one using Blue Moon. Sunderland's include two wind-ups at City: its nickname ("The Citizens. Sounds like a book club.") and Blue Moon.
 - **The new prompt on the old lines.** Run through the new `--check`, the Revision 9-prompt lines lost their dashes as designed (for example "For me, Semenyo was the difference. Two goals and a constant threat."), and 15 of 16 still passed the gate. The one fail is the copy check above.
 
+**Revision 16 dry run** (9 Oct 2026, `PROMPT_VERSION` `e7a6c882`). One paid dry run of 560590, approved by the project owner. The Revision 9 third-round run is kept as `review/dryrun-560590-v8.json`.
+- **Result.** Man City 4/8, Sunderland 7/8 (11 of 16, against 10 of 16 in the third round). Both sides reach `MIN_PASSING_COUNT`, Man City only just.
+  - Man City: `STAT` 1/2, `BANTER` 2/3, `HOT_TAKE` 1/3.
+  - Sunderland: `STAT` 2/2, `BANTER` 2/3, `HOT_TAKE` 3/3.
+- **Shorter, but not short enough.** Lines ran 8–15 words, mean 11.4, against 14–23 and mean 18.2 in the third round. 5 of 16 were over 12 words, 4 of them passing.
+- **Dashes are gone.** No line or note has an em dash or spaced dash, against 7 lines in the third round. The dry-run JSON keeps only the replaced text, so it doesn't show whether the model wrote any dashes that `normaliseDashes()` then replaced.
+- **No hedge openers** on either side, against several before.
+- **The comma shape wasn't followed.** About 4 Man City lines and 5–6 Sunderland lines are one sentence with a clause added after a comma ("Semenyo was brilliant, two goals say it all."), against a limit of two per side. Several are tacked-on endings that decision 2 bans: "win or lose", "no sugar coating it", "rough one", "bless them".
+- **`STAT` lines follow the new shape.** Each gives a fact and a short reaction, but three of four reuse the prompt's own examples, "Mad game." and "Football.". Sunderland's "Away day, trailing 3-2 at half time, ended up 5-3. Football." is close to the half-by-half summary the prompt asks to avoid.
+- **What the checks caught:**
+  - The code gate dropped three Man City lines whose notes said "data" ("based on his four saves in the data"). The checker passed all three, so the gate cost Man City half its passing lines. No Sunderland note did this.
+  - E7 failed Man City's "City away days never feel quiet, whoever we're playing.", because City were at home. That's correct.
+  - E3 failed Sunderland's "Give it to the Black Cats, we never make an away trip boring." as a trend across other away trips. That's arguably too strict, since it's about how the fans behave, which B3 allows.
+  - B6 and B7 failed nothing. No line used made-up club culture or mocked anything off the pitch. Club culture used: "the Black Cats" (both sides).
+- **Got through that shouldn't have:**
+  - Sunderland `HOT_TAKE` "Roefs barely got tested and still let five in, rough one." criticises a named player without one of his events as its basis (H3). It infers how often he was tested from his save count (E2), and it implies he's the goalkeeper (E9).
+  - Man City `BANTER` "The Black Cats will tell you that result doesn't really count, bless them." is about this match's result, and "bless them" is the patronising tone decision 5 rules out.
+  - Notes are often longer than "one or two short sentences", and Man City's "in the keeper's favour" names a position in a note.
+- **Wind-ups.** Sunderland has one that reads well ("City fans always act like turning up is the hard part."). Man City's only wind-up is the "bless them" line above.
+- **Cost and checker output.**
+  - 2 generation and 16 safety-check calls, 54.6k input and 10.7k output tokens: about US$0.22 at $2/$10 per MTok, against $0.21 for the third round.
+  - Checker output per check: median 350 tokens, maximum 833. In the third round on this match they were 387 and 1,413.
+
 ## 1. Architecture
 
 ```
