@@ -5,6 +5,7 @@
 const { COMMENT_TYPES, TARGET_MIX, MAX_COMMENTS_PER_PERSPECTIVE } = require('./lib/constants');
 const { complete, parseJsonReply } = require('./lib/claude-client');
 const { GENERATION_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
+const { normaliseDashes } = require('./lib/code-gate');
 
 const TEMPLATE = loadPrompt(GENERATION_PROMPT_FILE);
 
@@ -33,8 +34,9 @@ function toCandidate(item) {
     return { type: null, text: JSON.stringify(item), note: null, rejected: 'not a { type, text, note } object' };
   }
   const type = normaliseType(item.type);
-  const text = typeof item.text === 'string' ? item.text.trim() : '';
-  const note = typeof item.note === 'string' ? item.note.trim() : '';
+  // Dashes are replaced here (Revision 16), so the checker and the code gate see the final wording.
+  const text = typeof item.text === 'string' ? normaliseDashes(item.text.trim()) : '';
+  const note = typeof item.note === 'string' ? normaliseDashes(item.note.trim()) : '';
   const candidate = { type: COMMENT_TYPES.includes(type) ? type : item.type ?? null, text, note };
   if (!COMMENT_TYPES.includes(type)) candidate.rejected = `invalid type ${JSON.stringify(item.type)}`;
   else if (!text) candidate.rejected = 'empty text';

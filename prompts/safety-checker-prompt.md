@@ -58,7 +58,8 @@ Rules by type — check only the rules for the comment's declared type:
 - STAT:
   - S1: fail if any specific claim isn't in the match data above, including
     "players" and "hooks", even if it might be true (an assist, a league
-    position, a run of form).
+    position, a run of form). A short reaction that makes no claim of its
+    own ("Mad game.", "Football.") is not a claim.
   - S2: fail if any number, in digits or in words ("one", "nil", "three"),
     doesn't match the match data.
 - HOT_TAKE (positive or enthusiastic opinions pass, however strong; strong
@@ -88,6 +89,12 @@ Rules by type — check only the rules for the comment's declared type:
   - B4: fail if it names a player.
   - B5: fail if it mentions this match's day or date (e.g. "a Sunday
     kick-off").
+  - B6: fail if it uses a club song, chant, nickname or tradition that
+    fans of both clubs wouldn't know, or one that's made up. A club's
+    common nickname or its best-known terrace song passes.
+  - B7: fail if it mocks anything beyond football: a town, city, region or
+    accent, money, or any tragedy or disaster. Friendly digs at a club,
+    its fans, its songs or its nickname pass.
 
 Go through E1 to E9, then each rule for the comment's declared type, in
 order. Give each rule "pass" or "fail"; add a short reason only for a rule

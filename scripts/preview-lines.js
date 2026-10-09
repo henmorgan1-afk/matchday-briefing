@@ -9,8 +9,9 @@
 //       Builds both sides' match data as run-pipeline.js does, fills the generation prompt for each,
 //       and saves them as review/preview-<id>-home.md and review/preview-<id>-away.md.
 //   node scripts/preview-lines.js --match <id> --check <file>
-//       Reads { "<team short name>": [{ "type", "text", "note" }] } and runs every line through the
-//       code gate for its side, then the first-three-words variety check across both sides.
+//       Reads { "<team short name>": [{ "type", "text", "note" }] }, replaces dashes in each text and
+//       note as generate-comments.js does, and runs every line through the code gate for its side,
+//       then the first-three-words variety check across both sides.
 //
 // Never import lib/claude-client.js, generate-comments.js or safety-check.js here: this tool must
 // make no model calls.
@@ -19,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { getServiceClient } = require('./lib/supabase-client');
 const { GENERATION_PROMPT_FILE, buildMatchData, fillTemplate, loadPrompt, matchDataJson } = require('./lib/match-data');
-const { codeGateProblems, openingWords } = require('./lib/code-gate');
+const { codeGateProblems, openingWords, normaliseDashes } = require('./lib/code-gate');
 const { readPlayerData, readNameIndex, perspectiveNames } = require('./lib/player-data');
 const { COMMENT_TYPES } = require('./lib/constants');
 
@@ -123,6 +124,14 @@ async function writePrompts(supabase, matchId) {
   }
 }
 
+// A line's text and note as generate-comments.js passes them on: trimmed, with dashes replaced
+// (Revision 16). A text or note that isn't a string is left for formatProblems to report.
+function withDashesReplaced(line) {
+  if (line === null || typeof line !== 'object' || Array.isArray(line)) return line;
+  const replace = (value) => (typeof value === 'string' ? normaliseDashes(value.trim()) : value);
+  return { ...line, text: replace(line.text), note: replace(line.note) };
+}
+
 // Format problems, as generate-comments.js would reject the item before any check.
 function formatProblems(line) {
   if (line === null || typeof line !== 'object' || Array.isArray(line)) return ['not a { type, text, note } object'];
@@ -156,22 +165,25 @@ async function checkLines(supabase, matchId, file) {
     if (!Array.isArray(lines)) throw new Error(`${file}: "${team.short_name}" should be a list of lines`);
     console.log(`\n${team.short_name} (${lines.length} line${lines.length === 1 ? '' : 's'})`);
     let passed = 0;
-    lines.forEach((line, i) => {
+    lines.forEach((raw, i) => {
+      const line = withDashesReplaced(raw);
       let problems = formatProblems(line);
-      if (!problems.length) problems = codeGateProblems({ type: line.type, text: line.text.trim(), note: line.note.trim() }, matchData, names);
+      if (!problems.length) problems = codeGateProblems({ type: line.type, text: line.text, note: line.note }, matchData, names);
       if (!problems.length) {
         const opening = openingWords(line.text);
         if (openings.has(opening)) problems.push(`opens with the same three words as ${openings.get(opening)}, ${JSON.stringify(opening)}`);
         else openings.set(opening, `${team.short_name} line ${i + 1}`);
       }
-      const type = line?.type ?? '?';
-      const text = JSON.stringify(line?.text ?? line);
+      const out = [`  ${i + 1}. [${raw?.type ?? '?'}] ${JSON.stringify(raw?.text ?? raw)}`];
+      if (typeof raw?.text === 'string' && line.text !== raw.text.trim()) out.push(`dashes replaced: ${JSON.stringify(line.text)}`);
+      if (typeof raw?.note === 'string' && line.note !== raw.note.trim()) out.push(`dashes replaced in note: ${JSON.stringify(line.note)}`);
       if (problems.length) {
-        console.log(`  ${i + 1}. [${type}] ${text}\n     FAIL: ${problems.join('; ')}`);
+        out.push(`FAIL: ${problems.join('; ')}`);
       } else {
         passed += 1;
-        console.log(`  ${i + 1}. [${type}] ${text}\n     pass`);
+        out.push('pass');
       }
+      console.log(out.join('\n     '));
     });
     counts.push(`${team.short_name} ${passed}/${lines.length} pass`);
   }

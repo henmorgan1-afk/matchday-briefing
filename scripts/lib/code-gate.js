@@ -1,6 +1,7 @@
 // Deterministic line checks (SPEC.md §3.1 step 4, §3.3, §9, Revisions 7 and 9). The pipeline runs them
 // as a code gate after the model safety check, and check-p1.js asserts them on passing lines, so both
 // use this file. No model calls; the only I/O is reading the generation prompt once, for the copy check.
+// normaliseDashes (Revision 16) isn't a check: generate-comments.js applies it to every line first.
 
 const { GENERATION_PROMPT_FILE, loadPrompt } = require('./match-data');
 
@@ -133,8 +134,10 @@ function nameProblems({ type, text }, names) {
 const COPY_RUN_WORDS = 5;
 
 // The voice reference's hedges and idioms are offered for reuse word for word, so repeating them
-// isn't copying. Only these three are five words or longer.
-const REUSABLE_PHRASES = Object.freeze(['Say what you like, but', 'second best all over the pitch', 'a game of two halves']);
+// isn't copying. Only these four are five words or longer.
+const REUSABLE_PHRASES = Object.freeze([
+  'Say what you like, but', 'second best all over the pitch', 'three points in the bank', 'a game of two halves',
+]);
 
 // Lower-cased words, ignoring punctuation; "I'm" and "City's" stay one word.
 const wordsOf = (s) => String(s).toLowerCase().replace(/[‘’]/g, "'").match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) ?? [];
@@ -192,6 +195,56 @@ const NOTE_BANNED_PATTERN = /\b(?:match\s+data|data|player\s+list|players)\b/gi;
 
 function noteProblems(note) {
   return [...String(note ?? '').matchAll(NOTE_BANNED_PATTERN)].map((m) => `note says ${JSON.stringify(m[0])}`);
+}
+
+// ---------------------------------------------------------------- dashes (Revision 16)
+
+// A run of dashes, with any whitespace and comma just before it and any whitespace after it. Dashes
+// split only by whitespace ("— —", " -- ") are one run.
+const DASH_RUN = /\s*,?\s*([-–—―]+(?:\s+[-–—―]+)*)\s*/gu;
+const ENDS_SENTENCE = /[.!?…]["'’”)\]]*$/u;
+
+// Turns dashes used as punctuation into a full stop, so no line or note reaches either check with
+// one. An em dash or horizontal bar is always a sentence break; a hyphen or en dash is one only with
+// whitespace on at least one side, except a spaced one between two digits, which is a score
+// ("5 - 3" -> "5-3"). At a break the dash, the whitespace around it and a comma just before it go,
+// and ". " starts a new sentence with a capital letter; no full stop is added after . ! ? or …, a
+// dash at the very end becomes a single full stop, and one at the very start is just removed.
+// Unspaced hyphens and en dashes ("hat-trick", "one-nil", "3–5") are left alone, and so is text
+// with no dashes.
+function normaliseDashes(text) {
+  const s = String(text);
+  let out = '';
+  let last = 0;
+  let capitalise = false;
+  const append = (chunk) => {
+    if (capitalise && chunk) {
+      chunk = chunk.replace(/^(["'‘“(]*)(\p{Ll})/u, (_, open, letter) => open + letter.toUpperCase());
+      capitalise = false;
+    }
+    out += chunk;
+  };
+  for (const m of s.matchAll(DASH_RUN)) {
+    const [whole, dashes] = m;
+    const end = m.index + whole.length;
+    if (!/[—―]/.test(dashes) && !/\s/.test(whole)) continue; // inside a word or a score
+    append(s.slice(last, m.index));
+    last = end;
+    const score = /^[-–]$/.test(dashes) && !whole.includes(',') && /\d$/.test(out) && /^\d/.test(s.slice(end));
+    if (score) {
+      out += dashes;
+      continue;
+    }
+    out = out.trimEnd();
+    if (!out) continue; // a dash at the very start
+    if (!ENDS_SENTENCE.test(out)) out += '.';
+    if (end < s.length) {
+      out += ' ';
+      capitalise = true;
+    }
+  }
+  append(s.slice(last));
+  return out;
 }
 
 // ---------------------------------------------------------------- numbers
@@ -264,5 +317,6 @@ module.exports = {
   copiedFromPrompt,
   openingWords,
   noteProblems,
+  normaliseDashes,
   codeGateProblems,
 };
