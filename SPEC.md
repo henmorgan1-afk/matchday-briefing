@@ -875,6 +875,50 @@ Implementation notes, within those decisions:
   - 2 generation and 16 safety-check calls, 54.6k input and 10.7k output tokens: about US$0.22 at $2/$10 per MTok, against $0.21 for the third round.
   - Checker output per check: median 350 tokens, maximum 833. In the third round on this match they were 387 and 1,413.
 
+**Second round** (9 Oct 2026, the project owner's decisions after reading the Revision 16 dry run). Only `prompts/*.md` and this file change; the code gate, `normaliseDashes()` and the way the pipeline reads the checker's rules stay as they are. §3.3 and §3.4 are updated to match.
+1. **Safety.** The first dry run passed "Roefs barely got tested and still let five in, rough one", which criticises a player with no red card, own goal or missed penalty. Checker rule H3 now fails criticism of a player for anything other than those three events, with that line as its example. The generation prompt says the same: saves, goals conceded and how busy a player was are never grounds for criticising a player.
+2. **`BANTER`.** Checker rule B5 now covers this match's result as well as its day and date, with "that result doesn't really count" as its example. "Bless them" joins "credit where it's due" as an example of the patronising praise or pity the prompt rules out.
+3. **Endings.** The "at most two of the 8" rule was ignored: four to six lines per side used the comma shape. It's replaced with a flat rule: end each sentence at its full stop, with no tail after a comma. The prompt names the tails the dry run used ("win or lose", "bless them", "rough one", "no sugar coating it"). 12 words is now a hard limit, not "most comments".
+4. **`STAT`.** Three of four reactions copied the prompt's "Mad game." or "Football.", so both examples are gone from the generation prompt; the checker's S1 keeps them. "mad game" is also gone from the everyday-words examples, replaced by "a shocker". `STAT` lines may no longer recite the half-time and final scores together.
+5. **Notes.** Three Man City notes said "data", so the gate dropped three lines that otherwise passed. Notes are now under 20 words, the prompt says what to write instead ("From who scored", "From the final score"), and notes may not name a position ("the keeper").
+6. **Lesson.** The free preview is written by a stronger model than the live one, so it flatters a prompt. A paid dry run is the real test before merging.
+
+Implementation notes for the second round:
+- **The `HOT_TAKE` tone example** is now "Won ugly. Not complaining.". The old one, "Our keeper kept us in it.", named a position.
+- **The three first-run lines still pass the code gate.** "Roefs barely got tested and still let five in, rough one." (Sunderland `HOT_TAKE`), "The Black Cats will tell you that result doesn't really count, bless them." (Man City `BANTER`) and "City fans always act like turning up is the hard part." (Sunderland `BANTER`) all pass, checked with the same name context `preview-lines.js` builds. Their problems are for the model checker. None fails the copy check: the generation prompt quotes only the tails "rough one" and "bless them", under the copy check's five words, and only the checker prompt quotes the Roefs line.
+- **Free checks.** `promptMixProblems()` returns no problems. The generation prompt has no em dash and no "Mad game" or "Football.". Both prompt files end with one newline, and §3.4 matches them byte for byte.
+- **`PROMPT_VERSION`** is now `86c616ab`. It was `e7a6c882` in the first round.
+- **Review files.** The first Revision 16 dry run is kept as `review/dryrun-560590-v9.json`.
+
+**Second-round dry run** (9 Oct 2026, `PROMPT_VERSION` `86c616ab`). One paid dry run of 560590, approved by the project owner.
+- **Result.** Man City 6/8, Sunderland 8/8 (14 of 16, against 11 of 16 in the first Revision 16 run). Both sides clear `MIN_PASSING_COUNT` comfortably.
+  - Man City: `STAT` 2/2, `BANTER` 2/3, `HOT_TAKE` 2/3.
+  - Sunderland: `STAT` 2/2, `BANTER` 3/3, `HOT_TAKE` 3/3.
+- **The voice rules mostly held.**
+
+  | | First run (`e7a6c882`) | Second round (`86c616ab`) |
+  |---|---|---|
+  | Passing lines | 11/16 | 14/16 |
+  | Lines over 12 words | 5 | 0 |
+  | Lines with a tail after a comma | 9–10 | 1 |
+  | Lines dropped by the gate for note words | 3 | 0 |
+  | Notes over 20 words, or saying "data" or a position | 5 | 0 |
+
+  Lines ran 8–12 words, mean 10.6 (11.4 before). The one comma tail is Sunderland's "Three goals and we still lost, baffling.". There are no dashes in any line or note, and no hedge openers. Notes ran 7–14 words. As before, the dry-run JSON keeps only the replaced text, so it can't show whether the model wrote any dashes.
+- **What the checks caught.** Both fails were the checker, and both look right:
+  - B3 failed Man City's "Always fancy our chances against the Black Cats if I'm honest.", as a pattern of past results.
+  - E3 failed Man City's "Haaland barely needs to be mentioned anymore. Just keeps scoring goals.", as form across other matches.
+  - The new H3 and B5 wording had nothing to catch: no `HOT_TAKE` criticised a named player, and no `BANTER` mentioned the result.
+- **Got through that shouldn't have, or reads badly:**
+  - **The Roefs criticism moved into a `STAT`.** Sunderland's "Roefs made just one save despite us shipping five goals." is accurate, but "just… despite" blames him for the goals conceded, which H3 now bans in a `HOT_TAKE`. H3 doesn't apply to `STAT` lines, so nothing stopped it. Man City's "Donnarumma made four saves yet we still shipped three." leans the same way, more mildly, and its note says he "conceded three goals".
+  - **Tails without a comma.** Man City's "Sunderland fans will sing their hearts out whatever the scoreboard says." is the banned "whatever happens on the pitch" ending in other words. The failed "…if I'm honest" moved a hedge to the end of the line.
+  - **`STAT` reactions mostly disappeared** rather than becoming original. Only one of four `STAT` lines has one, "Wild game.", which is "Mad game." reworded. The other three fold the reaction into "still lost" or "just one save".
+  - **Weak or muddled `BANTER`.** Man City's only passing wind-up, "Big away day for them. Hope the lads brought their boots.", reads like a pre-match line. Sunderland's "City's lot sing about years we weren't even watching." is unclear: it hints at a song about City's past that isn't named, which B6 should arguably have questioned.
+  - **Repetition within a side.** Sunderland says "we still lost" twice (`STAT` 1, `HOT_TAKE` 6) and "shipping five" twice (`STAT` 2, `HOT_TAKE` 8). "Still" is in four of the 16 lines.
+- **Cost and checker output.**
+  - 2 generation and 16 safety-check calls, 56.2k input and 9.4k output tokens: about US$0.21 at $2/$10 per MTok, against $0.22 for the first run.
+  - Checker output per check: median 374 tokens, maximum 876 (350 and 833 in the first run).
+
 ## 1. Architecture
 
 ```
@@ -1196,8 +1240,9 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
   - Positive/enthusiastic: unrestricted, however strong.
   - Negative/critical: allowed to be equally strong on **performance**, but the checker fails any line — regardless of how it's hedged or phrased as opinion — that implies the team, any player or staff lacked effort, were dishonest or cheated, comments on a player's character, private life, looks, nationality or injuries, or refers to anything off the pitch. "Worst first half I've seen from us all season" passes (provided the half-time score doesn't contradict it); "they couldn't be bothered" fails, and so does "not at the races" in any form (it's lack-of-effort phrasing, so it isn't in the prompt's idiom list).
   - Criticism of a named player must rest on one of that player's events and say which, in the line or its note (N3).
+  - Only a red card, an own goal or a missed penalty can ground criticism of a player. Saves, goals conceded and how busy a player was never do, so "Roefs barely got tested and still let five in" fails (checker rule H3, Revision 16 second round).
   - `note`: an outlier warning, e.g. "Strong take. Not everyone will agree." When the line criticises a named player, the note also names the event, e.g. "Strong take based on the red card. Not everyone will agree." (Revision 16 took the em dashes out of these examples.)
-- **`BANTER`** — generic, team/rivalry-flavoured, not tied to this match's specific data. Must not contain any number or scoreline of any kind (digits or number words), or state a specific date or named past incident, since there is no historical data source to verify such a claim against yet (this is exactly the "invented fact" risk called out in the interview). It names no player (checker rule B4, Revision 9): every nameable player is nameable only because of this match's events. It doesn't mention this match's day or date, such as "a Sunday kick-off" (checker rule B5, Revision 9). Since Revision 16 at least one per side is a friendly wind-up at the other club, kept to football and to club culture fans of both clubs would know (a common nickname or best-known terrace song, never an invented chant, checker rule B6), and never mocking a town, city, region, accent, money, or any tragedy or disaster (checker rule B7). `note`: "General chat, not a specific claim."
+- **`BANTER`** — generic, team/rivalry-flavoured, not tied to this match's specific data. Must not contain any number or scoreline of any kind (digits or number words), or state a specific date or named past incident, since there is no historical data source to verify such a claim against yet (this is exactly the "invented fact" risk called out in the interview). It names no player (checker rule B4, Revision 9): every nameable player is nameable only because of this match's events. It doesn't mention this match's day or date, such as "a Sunday kick-off" (checker rule B5, Revision 9), or this match's result, such as "that result doesn't really count" (B5, Revision 16 second round). Since Revision 16 at least one per side is a friendly wind-up at the other club, kept to football and to club culture fans of both clubs would know (a common nickname or best-known terrace song, never an invented chant, checker rule B6), and never mocking a town, city, region, accent, money, or any tragedy or disaster (checker rule B7). `note`: "General chat, not a specific claim."
   - Allowed: how a fixture, an atmosphere or a club's fans feel or behave ("always feels like a proper occasion", "their fans never need an excuse"). This deliberately includes "feel" wording that hints at how the fixture tends to go, such as "get through it with a bit of pride intact" or "never as straightforward as people think" (Revision 7). Since Revision 9 the two quoted examples are only in the checker's B3, not in the generation prompt, because both sides' `BANTER` copied them.
   - Not allowed: anything about what happened on the pitch in past meetings, including style of play ("we never do a routine 1-0", "every fixture against City turns into a basketball score", "always try and rough us up", "we always struggle there").
   - Parked, not in this build: a historical head-to-head data source, so `BANTER` can eventually make verified specific callbacks.
@@ -1268,10 +1313,11 @@ Write exactly 8 comments in this mix:
   who scored, scored an own goal, was sent off, missed or saved a
   penalty, or made saves). Nothing else: no league position, no form,
   no season records. Number words count as numbers ("one", "nil",
-  "three") and must match the match data too. Don't list every scorer or
-  split the score half by half: pick the single most surprising or telling
-  fact and add a short, dry fan reaction that makes no claim of its own
-  ("Mad game.", "Football.").
+  "three") and must match the match data too. Don't list every scorer,
+  and don't recite the half-time and final scores together. Pick the
+  single most surprising or telling fact and add a short, dry fan
+  reaction of your own that makes no claim. Don't borrow a reaction from
+  this prompt.
 - 3 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
   match's specific events. No numbers or scorelines of any kind, not even
   number words like "one" or "nil". It can say how a fixture, an atmosphere
@@ -1281,14 +1327,14 @@ Write exactly 8 comments in this mix:
   basketball score", no "always try and rough us up", no "we always
   struggle there"), and no specific date or named past incident (you have
   no way to verify those, so don't invent them). Never name a player, and
-  never mention this match's day or date. Make at least one a friendly
+  never mention this match's day, date or result. Make at least one a friendly
   wind-up aimed at the other club. Club culture is fair game only when
   it's famous enough that fans of both clubs would know it: a club's
   common nickname or its best-known terrace song. Never invent a chant,
   song or tradition. Keep the wind-up to football: a club, its fans, its
   songs or its nickname. Never mock a town, city, region or accent, money,
-  or any tragedy or disaster. No patronising praise of the other club
-  ("credit where it's due").
+  or any tragedy or disaster. No patronising praise or pity for the other
+  club ("credit where it's due", "bless them").
 - 3 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played
   as a whole, or how a player listed in "players" played. Positive takes can
   be as enthusiastic as you like. Negative takes can be just as strong about
@@ -1298,7 +1344,8 @@ Write exactly 8 comments in this mix:
   the pitch, even hedged as opinion. Criticism of a named player must rest
   on one of that player's events in "players" (a red card, an own goal, a
   missed penalty), say which in the line or its note, and stay about that
-  event. Never comment on a player's character, private life, looks,
+  event. Saves, goals conceded and how busy a player was are never grounds
+  for criticising a player. Never comment on a player's character, private life, looks,
   nationality or injuries. Number words count as numbers ("one", "three")
   and, like digits, must match the match data. Exaggerate for comedy only
   in football terms: never compare a performance to a crime, cheating or
@@ -1306,14 +1353,15 @@ Write exactly 8 comments in this mix:
 
 Voice: a British fan texting a mate, not a pundit and not a reporter.
 - Everyday British words that someone who doesn't follow football still
-  understands ("gutted", "shipped five", "mad game").
+  understands ("gutted", "shipped five", "a shocker").
 - Dry, deadpan humour. Understated punchlines beat big jokes.
-- Short. Most comments under 12 words.
+- Short. Every comment is 12 words or fewer.
 - Vary the shapes across the 8: some one-liners, some two short
-  sentences, the odd question. At most two of the 8 may be one sentence
-  that adds a second clause after a comma.
-- Stop when the point is made. Don't add an ending that only repeats it
-  ("proper travelling support", "whatever happens on the pitch").
+  sentences, the odd question.
+- End each sentence at its full stop. Never add a tail after a comma
+  ("win or lose", "bless them", "rough one", "no sugar coating it",
+  "proper travelling support", "whatever happens on the pitch"). If a
+  second thought matters, make it its own short sentence.
 - Never use an em dash or a spaced dash. To join two ideas, use a full
   stop. Scores like 5-3 are fine.
 - Hedge openers ("For me,", "If I'm being honest,", "I'll be honest,",
@@ -1323,17 +1371,19 @@ Voice: a British fan texting a mate, not a pundit and not a reporter.
   "game management", "backs against the wall", "second best all over the
   pitch", "job done", "three points in the bank", "a game of two halves".
 - Tone examples from other, made-up matches. Copy the tone, never the
-  words: "Our keeper kept us in it. Shame about everyone else." (HOT_TAKE),
+  words: "Won ugly. Not complaining." (HOT_TAKE),
   "One-nil and a clean sheet. Tidy." (STAT).
 Avoid: stacking more than one idiom per line, starting two comments with
 the same three words, and any phrase so generic it could apply to
 literally any match.
 
-For each comment, also write a "note" in plain English, one or two short
-sentences, that helps someone who doesn't follow football use the line.
-Never use the match data's field names (such as total_goals, full_time or
-own_goal_for_us), never the words "match data", "data", "player list" or
-"players", and never an em dash.
+For each comment, also write a "note" in plain English, under 20 words in
+all, that helps someone who doesn't follow football use the line. Never
+use the match data's field names (such as total_goals, full_time or
+own_goal_for_us), and never an em dash. Never write the words "data",
+"match data", "player list" or "players" in a note: say "From who scored"
+or "From the final score" instead. Never name a player's position in a
+note either (no "the keeper").
 - STAT: say what it's based on ("From the final score", "From who
   scored"), and explain any football term in the line ("A hat-trick is
   three goals by one player").
@@ -1424,7 +1474,11 @@ Rules by type — check only the rules for the comment's declared type:
     "nowhere near the races") always fail.
   - H3: fail if it criticises a named player without saying, in the text
     or the note, which of that player's events in "players" it's based on,
-    or if the criticism goes beyond that event (e.g. "anonymous all game").
+    if the criticism goes beyond that event (e.g. "anonymous all game"), or
+    if it criticises a player for anything other than a red card, an own
+    goal or a missed penalty. Saves, goals conceded and how busy a player
+    was are never grounds: "Roefs barely got tested and still let five in"
+    fails.
 - BANTER:
   - B1: fail if it contains any number or scoreline of any kind, in digits
     or in words (including "one" or "nil").
@@ -1437,8 +1491,8 @@ Rules by type — check only the rules for the comment's declared type:
     "always feels like a proper occasion", "their fans never need an
     excuse").
   - B4: fail if it names a player.
-  - B5: fail if it mentions this match's day or date (e.g. "a Sunday
-    kick-off").
+  - B5: fail if it mentions this match's day, date or result (e.g. "a
+    Sunday kick-off", "that result doesn't really count").
   - B6: fail if it uses a club song, chant, nickname or tradition that
     fans of both clubs wouldn't know, or one that's made up. A club's
     common nickname or its best-known terrace song passes.

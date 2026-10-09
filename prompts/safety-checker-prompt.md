@@ -74,7 +74,11 @@ Rules by type — check only the rules for the comment's declared type:
     "nowhere near the races") always fail.
   - H3: fail if it criticises a named player without saying, in the text
     or the note, which of that player's events in "players" it's based on,
-    or if the criticism goes beyond that event (e.g. "anonymous all game").
+    if the criticism goes beyond that event (e.g. "anonymous all game"), or
+    if it criticises a player for anything other than a red card, an own
+    goal or a missed penalty. Saves, goals conceded and how busy a player
+    was are never grounds: "Roefs barely got tested and still let five in"
+    fails.
 - BANTER:
   - B1: fail if it contains any number or scoreline of any kind, in digits
     or in words (including "one" or "nil").
@@ -87,8 +91,8 @@ Rules by type — check only the rules for the comment's declared type:
     "always feels like a proper occasion", "their fans never need an
     excuse").
   - B4: fail if it names a player.
-  - B5: fail if it mentions this match's day or date (e.g. "a Sunday
-    kick-off").
+  - B5: fail if it mentions this match's day, date or result (e.g. "a
+    Sunday kick-off", "that result doesn't really count").
   - B6: fail if it uses a club song, chant, nickname or tradition that
     fans of both clubs wouldn't know, or one that's made up. A club's
     common nickname or its best-known terrace song passes.

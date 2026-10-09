@@ -56,10 +56,11 @@ Write exactly 8 comments in this mix:
   who scored, scored an own goal, was sent off, missed or saved a
   penalty, or made saves). Nothing else: no league position, no form,
   no season records. Number words count as numbers ("one", "nil",
-  "three") and must match the match data too. Don't list every scorer or
-  split the score half by half: pick the single most surprising or telling
-  fact and add a short, dry fan reaction that makes no claim of its own
-  ("Mad game.", "Football.").
+  "three") and must match the match data too. Don't list every scorer,
+  and don't recite the half-time and final scores together. Pick the
+  single most surprising or telling fact and add a short, dry fan
+  reaction of your own that makes no claim. Don't borrow a reaction from
+  this prompt.
 - 3 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
   match's specific events. No numbers or scorelines of any kind, not even
   number words like "one" or "nil". It can say how a fixture, an atmosphere
@@ -69,14 +70,14 @@ Write exactly 8 comments in this mix:
   basketball score", no "always try and rough us up", no "we always
   struggle there"), and no specific date or named past incident (you have
   no way to verify those, so don't invent them). Never name a player, and
-  never mention this match's day or date. Make at least one a friendly
+  never mention this match's day, date or result. Make at least one a friendly
   wind-up aimed at the other club. Club culture is fair game only when
   it's famous enough that fans of both clubs would know it: a club's
   common nickname or its best-known terrace song. Never invent a chant,
   song or tradition. Keep the wind-up to football: a club, its fans, its
   songs or its nickname. Never mock a town, city, region or accent, money,
-  or any tragedy or disaster. No patronising praise of the other club
-  ("credit where it's due").
+  or any tragedy or disaster. No patronising praise or pity for the other
+  club ("credit where it's due", "bless them").
 - 3 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played
   as a whole, or how a player listed in "players" played. Positive takes can
   be as enthusiastic as you like. Negative takes can be just as strong about
@@ -86,7 +87,8 @@ Write exactly 8 comments in this mix:
   the pitch, even hedged as opinion. Criticism of a named player must rest
   on one of that player's events in "players" (a red card, an own goal, a
   missed penalty), say which in the line or its note, and stay about that
-  event. Never comment on a player's character, private life, looks,
+  event. Saves, goals conceded and how busy a player was are never grounds
+  for criticising a player. Never comment on a player's character, private life, looks,
   nationality or injuries. Number words count as numbers ("one", "three")
   and, like digits, must match the match data. Exaggerate for comedy only
   in football terms: never compare a performance to a crime, cheating or
@@ -94,14 +96,15 @@ Write exactly 8 comments in this mix:
 
 Voice: a British fan texting a mate, not a pundit and not a reporter.
 - Everyday British words that someone who doesn't follow football still
-  understands ("gutted", "shipped five", "mad game").
+  understands ("gutted", "shipped five", "a shocker").
 - Dry, deadpan humour. Understated punchlines beat big jokes.
-- Short. Most comments under 12 words.
+- Short. Every comment is 12 words or fewer.
 - Vary the shapes across the 8: some one-liners, some two short
-  sentences, the odd question. At most two of the 8 may be one sentence
-  that adds a second clause after a comma.
-- Stop when the point is made. Don't add an ending that only repeats it
-  ("proper travelling support", "whatever happens on the pitch").
+  sentences, the odd question.
+- End each sentence at its full stop. Never add a tail after a comma
+  ("win or lose", "bless them", "rough one", "no sugar coating it",
+  "proper travelling support", "whatever happens on the pitch"). If a
+  second thought matters, make it its own short sentence.
 - Never use an em dash or a spaced dash. To join two ideas, use a full
   stop. Scores like 5-3 are fine.
 - Hedge openers ("For me,", "If I'm being honest,", "I'll be honest,",
@@ -111,17 +114,19 @@ Voice: a British fan texting a mate, not a pundit and not a reporter.
   "game management", "backs against the wall", "second best all over the
   pitch", "job done", "three points in the bank", "a game of two halves".
 - Tone examples from other, made-up matches. Copy the tone, never the
-  words: "Our keeper kept us in it. Shame about everyone else." (HOT_TAKE),
+  words: "Won ugly. Not complaining." (HOT_TAKE),
   "One-nil and a clean sheet. Tidy." (STAT).
 Avoid: stacking more than one idiom per line, starting two comments with
 the same three words, and any phrase so generic it could apply to
 literally any match.
 
-For each comment, also write a "note" in plain English, one or two short
-sentences, that helps someone who doesn't follow football use the line.
-Never use the match data's field names (such as total_goals, full_time or
-own_goal_for_us), never the words "match data", "data", "player list" or
-"players", and never an em dash.
+For each comment, also write a "note" in plain English, under 20 words in
+all, that helps someone who doesn't follow football use the line. Never
+use the match data's field names (such as total_goals, full_time or
+own_goal_for_us), and never an em dash. Never write the words "data",
+"match data", "player list" or "players" in a note: say "From who scored"
+or "From the final score" instead. Never name a player's position in a
+note either (no "the keeper").
 - STAT: say what it's based on ("From the final score", "From who
   scored"), and explain any football term in the line ("A hat-trick is
   three goals by one player").
