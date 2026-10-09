@@ -36,6 +36,10 @@ Rules for every comment:
 - Never name a venue, stadium or ground.
 - Never say what position a player plays (no "up top", no "at the back"):
   positions aren't in the match data.
+- Never criticise or blame a named player in any type of comment, except
+  for their red card, own goal or missed penalty. Saves, goals conceded
+  and how busy a player was are never grounds, even by implication (no
+  "just one save despite us shipping five").
 - Never claim anything about the order or timing of goals beyond what the
   half-time and full-time scores show (no "while we were already up", no
   "late winner", no "we matched them goal for goal"). first_half_goals and

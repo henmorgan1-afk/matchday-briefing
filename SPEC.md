@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026) is on branch `prompt-voice`, tested with free previews only. It is not merged. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
 
 ## How this document is used
 
@@ -432,7 +432,7 @@ Implementation notes for the second round:
 - **Allowed numbers** now include each half's goals, so a line can say how many came in either half.
 - **The generation prompt states E9 and B5 too.** Without them, the generator would write lines that get checked, and paid for, only to fail, as Revision 7 noted for the gate's banned terms.
 - **Earlier notes.** 7 of the 350 earlier notes say "data".
-- **Rule IDs.** The checker now uses E1–E9 and, for `BANTER`, B1–B5.
+- **Rule IDs.** The checker now uses E1–E9 and, for `BANTER`, B1–B5. (Since Revision 16 they're E1–E10 and B1–B7.)
 - **`PROMPT_VERSION`** is now `5fccd873`.
 - **Review files.** The first Revision 9 dry run of 560590 is kept as `review/dryrun-560590-v6.json`, and the Revision 7 dry run of 560583 as `review/dryrun-560583-v4.json`.
 
@@ -919,6 +919,17 @@ Implementation notes for the second round:
   - 2 generation and 16 safety-check calls, 56.2k input and 9.4k output tokens: about US$0.21 at $2/$10 per MTok, against $0.22 for the first run.
   - Checker output per check: median 374 tokens, maximum 876 (350 and 833 in the first run).
 
+**Third round** (9 Oct 2026, the project owner's decision after reading the second-round dry run). Only `prompts/*.md` and this file change. §3.3 and §3.4 are updated to match.
+1. **Named-player criticism, every type.** The second-round run passed Sunderland's `STAT` "Roefs made just one save despite us shipping five goals", which blames a player for goals conceded. H3 covered only `HOT_TAKE`, so the rule now applies to every type as new checker rule E10: criticism or blame of a named player may rest only on a red card, an own goal or a missed penalty. Saves, goals conceded and how busy a player was are never grounds, even by implication. Stating a player's events neutrally ("Roefs made one save") passes. The generation prompt says the same under its rules for every comment. H3 is unchanged.
+2. **No dry run this round**, because the change only makes the checker stricter.
+3. **Left for the next round, after matchday 6:** the other weaknesses of the second-round run. Those are Man City's `BANTER` (its only passing wind-up read like a pre-match line), repeated phrases within a side ("we still lost", "shipping five"), and flat `STAT` reactions.
+
+Implementation notes for the third round:
+- **Checker wording.** E9 now ends with ";" like E1–E8, and E10 ends the list with ".". The checker goes through "E1 to E10", and its JSON example shows `"E10": "pass"`.
+- **No code changes.** Nothing in `scripts/` lists the checker's rule IDs. `safety-check.js` reads whatever rule IDs the checker returns, and any rule marked "fail" fails the comment. A sample reply with `"E10": "fail: blames the keeper"` and `"result": "pass"` comes back from `readVerdict()` as a fail.
+- **The copy check now covers the new example.** The generation prompt quotes "just one save despite us shipping five", so a line that repeats it fails the gate as well as E10.
+- **`PROMPT_VERSION`** is now `2056887e`. It was `86c616ab` in the second round.
+
 ## 1. Architecture
 
 ```
@@ -1214,7 +1225,7 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
   - **Named players only from the match's player data (Revision 9).** These rules replace "no named individuals". There is still no lineup or squad data. The model's training knowledge of squads goes out of date with every transfer window, so a name is safe only when the match's FPL events put it there.
     - **N1:** only players in this match's `players` list (§3.5) may be named or clearly identified. Managers, coaches, referees and other officials are never named, and there are no stand-ins for anyone outside the list ("the new signing"). When `players` is null (`player_data` isn't `ok`), nobody is named.
     - **N2:** a named player must have at least one event in the data. `players` lists only players with an event other than an assist, so N1 and N2 are checked together.
-    - **N3:** criticism of a named player must state its basis, in the line or its note, and fit that event: "For me, [Name]'s red card cost us" can pass, but "anonymous all game" fails, because no event shows it. This is checker rule H3.
+    - **N3:** criticism of a named player must state its basis, in the line or its note, and fit that event: "For me, [Name]'s red card cost us" can pass, but "anonymous all game" fails, because no event shows it. This is checker rule H3. Since Revision 16's third round, N3 applies to every type: criticism or blame of a named player, in any line, may rest only on a red card, an own goal or a missed penalty. Saves, goals conceded and how busy a player was are never grounds, even by implication, so the `STAT` "Roefs made just one save despite us shipping five goals" fails, while "Roefs made one save" passes (checker rule E10).
     - **N4:** about a named player, performance only. Never effort, honesty, character, private life, looks, nationality or injuries. This extends checker rule H2 to individuals.
     - **N5:** a player under 18 on match day (`under_18` true, which includes every player with no `birth_date`) may be named only in a `STAT` line.
   - **No specific in-match incidents** that aren't in the match data (§3.5): goal minutes, assists, whether a goal was a penalty, yellow cards, VAR decisions, injuries, substitutions, and any event or count that `players` doesn't show. Neither data source reports these, so any such claim is invented. Who scored, own goals, red cards, missed and saved penalties and save counts are in the data when `players` isn't null. How a goal was scored or what it looked like ("composure", a header, a volley, a tap-in, a long-range strike, a "worldie") isn't in it, so "that goal was world class composure" fails (checker rule E2, Revision 9).
@@ -1240,7 +1251,7 @@ Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE
   - Positive/enthusiastic: unrestricted, however strong.
   - Negative/critical: allowed to be equally strong on **performance**, but the checker fails any line — regardless of how it's hedged or phrased as opinion — that implies the team, any player or staff lacked effort, were dishonest or cheated, comments on a player's character, private life, looks, nationality or injuries, or refers to anything off the pitch. "Worst first half I've seen from us all season" passes (provided the half-time score doesn't contradict it); "they couldn't be bothered" fails, and so does "not at the races" in any form (it's lack-of-effort phrasing, so it isn't in the prompt's idiom list).
   - Criticism of a named player must rest on one of that player's events and say which, in the line or its note (N3).
-  - Only a red card, an own goal or a missed penalty can ground criticism of a player. Saves, goals conceded and how busy a player was never do, so "Roefs barely got tested and still let five in" fails (checker rule H3, Revision 16 second round).
+  - Only a red card, an own goal or a missed penalty can ground criticism of a player. Saves, goals conceded and how busy a player was never do, so "Roefs barely got tested and still let five in" fails (checker rule H3, Revision 16 second round, and for every type E10, third round).
   - `note`: an outlier warning, e.g. "Strong take. Not everyone will agree." When the line criticises a named player, the note also names the event, e.g. "Strong take based on the red card. Not everyone will agree." (Revision 16 took the em dashes out of these examples.)
 - **`BANTER`** — generic, team/rivalry-flavoured, not tied to this match's specific data. Must not contain any number or scoreline of any kind (digits or number words), or state a specific date or named past incident, since there is no historical data source to verify such a claim against yet (this is exactly the "invented fact" risk called out in the interview). It names no player (checker rule B4, Revision 9): every nameable player is nameable only because of this match's events. It doesn't mention this match's day or date, such as "a Sunday kick-off" (checker rule B5, Revision 9), or this match's result, such as "that result doesn't really count" (B5, Revision 16 second round). Since Revision 16 at least one per side is a friendly wind-up at the other club, kept to football and to club culture fans of both clubs would know (a common nickname or best-known terrace song, never an invented chant, checker rule B6), and never mocking a town, city, region, accent, money, or any tragedy or disaster (checker rule B7). `note`: "General chat, not a specific claim."
   - Allowed: how a fixture, an atmosphere or a club's fans feel or behave ("always feels like a proper occasion", "their fans never need an excuse"). This deliberately includes "feel" wording that hints at how the fixture tends to go, such as "get through it with a bit of pride intact" or "never as straightforward as people think" (Revision 7). Since Revision 9 the two quoted examples are only in the checker's B3, not in the generation prompt, because both sides' `BANTER` copied them.
@@ -1293,6 +1304,10 @@ Rules for every comment:
 - Never name a venue, stadium or ground.
 - Never say what position a player plays (no "up top", no "at the back"):
   positions aren't in the match data.
+- Never criticise or blame a named player in any type of comment, except
+  for their red card, own goal or missed penalty. Saves, goals conceded
+  and how busy a player was are never grounds, even by implication (no
+  "just one save despite us shipping five").
 - Never claim anything about the order or timing of goals beyond what the
   half-time and full-time scores show (no "while we were already up", no
   "late winner", no "we matched them goal for goal"). first_half_goals and
@@ -1452,7 +1467,13 @@ Rules for every type — fail the comment if it:
 - E7: contradicts the match data, even as an opinion;
 - E8: names a player whose "under_18" is true, unless the comment is STAT;
 - E9: says what position a player plays (e.g. "up top", "at the back"),
-  since positions aren't in the match data.
+  since positions aren't in the match data;
+- E10: criticises or blames a named player, in any type of comment, for
+  anything other than their red card, own goal or missed penalty. Saves,
+  goals conceded and how busy a player was are never grounds, even by
+  implication: "Roefs made just one save despite us shipping five goals"
+  fails. Stating a player's events neutrally ("Roefs made one save")
+  passes.
 
 Rules by type — check only the rules for the comment's declared type:
 - STAT:
@@ -1500,13 +1521,13 @@ Rules by type — check only the rules for the comment's declared type:
     accent, money, or any tragedy or disaster. Friendly digs at a club,
     its fans, its songs or its nickname pass.
 
-Go through E1 to E9, then each rule for the comment's declared type, in
+Go through E1 to E10, then each rule for the comment's declared type, in
 order. Give each rule "pass" or "fail"; add a short reason only for a rule
 that fails, as "fail: <short reason>". The overall result is "fail" if any
 rule failed, otherwise "pass".
 
 Return only this JSON, with one entry per rule you checked:
-{"rules": {"E1": "pass", "E2": "pass", ..., "E9": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
+{"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
 ```
 
 ### 3.5 Match data sent to the model (`scripts/lib/match-data.js`)

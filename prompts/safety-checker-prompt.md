@@ -52,7 +52,13 @@ Rules for every type — fail the comment if it:
 - E7: contradicts the match data, even as an opinion;
 - E8: names a player whose "under_18" is true, unless the comment is STAT;
 - E9: says what position a player plays (e.g. "up top", "at the back"),
-  since positions aren't in the match data.
+  since positions aren't in the match data;
+- E10: criticises or blames a named player, in any type of comment, for
+  anything other than their red card, own goal or missed penalty. Saves,
+  goals conceded and how busy a player was are never grounds, even by
+  implication: "Roefs made just one save despite us shipping five goals"
+  fails. Stating a player's events neutrally ("Roefs made one save")
+  passes.
 
 Rules by type — check only the rules for the comment's declared type:
 - STAT:
@@ -100,10 +106,10 @@ Rules by type — check only the rules for the comment's declared type:
     accent, money, or any tragedy or disaster. Friendly digs at a club,
     its fans, its songs or its nickname pass.
 
-Go through E1 to E9, then each rule for the comment's declared type, in
+Go through E1 to E10, then each rule for the comment's declared type, in
 order. Give each rule "pass" or "fail"; add a short reason only for a rule
 that fails, as "fail: <short reason>". The overall result is "fail" if any
 rule failed, otherwise "pass".
 
 Return only this JSON, with one entry per rule you checked:
-{"rules": {"E1": "pass", "E2": "pass", ..., "E9": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
+{"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
