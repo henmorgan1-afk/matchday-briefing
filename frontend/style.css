@@ -571,10 +571,11 @@ body[data-masthead="compact"] .notice:first-child { margin-top: 16px; }
 /* ---------------------------------------------------------------- install (Revision 14) */
 
 /* Bookmark + Install web app, below the team list on the pages that show it. app.js hides the whole
-   area on other pages and in the installed app. */
+   area on other pages and in the installed app. The footer hides while the area shows, so the area
+   clears the home bar itself, as the footer does. */
 .install {
   margin-top: 8px;
-  margin-bottom: 24px;
+  margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
   text-align: center;
 }
 
@@ -717,6 +718,9 @@ html:has(dialog[open]) { overflow: hidden; }
   color: var(--muted);
   font: 400 12px/1.6 var(--mono);
 }
+
+/* No visible line (the home page hides the iPhone line), so no bare rule either. */
+.footer:not(:has(> :not([hidden]))) { display: none; }
 
 .footer p { margin: 2px 0; }
 
