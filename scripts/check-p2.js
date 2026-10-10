@@ -493,6 +493,7 @@ const installState = (page) => page.evaluate(() => {
     dialog: Boolean(dialog && dialog.open),
     opens: window.tipDialogOpens,
     footer: visible(document.getElementById('footer-iphone')),
+    footerBox: visible(document.querySelector('.footer')), // the footer and its rule, hidden when it has no visible line
   };
 });
 
@@ -639,6 +640,7 @@ async function checkInstall(browser, base, teamSlug) {
     for (const [key, name] of [['area', 'install area'], ['bookmark', 'Bookmark button'], ['install', 'Install web app button'], ['reassure', 'reassurance line']]) {
       if (!s[key]) fail(`install: the ${name} is not visible on load (Android home page)`);
     }
+    if (s.footerBox) fail('install: the footer and its rule show with no visible line (Android home page)');
     if (s.dialog || s.opens !== 0) fail('install: #tip-dialog is open on load, expected it closed');
     if (s.footer) fail("install: the footer's iPhone line shows alongside the install area");
     const parts = await page.evaluate(() => {
@@ -682,7 +684,9 @@ async function checkInstall(browser, base, teamSlug) {
   //    click on the backdrop, 5px in from the viewport's top left. Focus goes back to the opener each time.
   for (const device of Object.keys(INSTALL_UAS)) {
     await withInstallPage(browser, device, home, `install (${device} tips)`, async (page) => {
-      if (!(await installState(page)).area) {
+      const s = await installState(page);
+      if (s.footerBox) fail(`install: the footer and its rule show with no visible line on the home page with a ${device} user agent`);
+      if (!s.area) {
         fail(`install: the install area is not visible on the home page with a ${device} user agent`);
         return;
       }
@@ -715,6 +719,7 @@ async function checkInstall(browser, base, teamSlug) {
     const s = await installState(page);
     if (s.dialog || s.opens !== 0) fail(`install: Install web app with a saved event opened #tip-dialog (${s.opens} times), expected prompt() only`);
     if (!s.footer) fail("install: the footer's iPhone line (#footer-iphone) didn't come back after the install area hid");
+    if (!s.footerBox) fail("install: the footer didn't come back after the install area hid");
   });
 
   // 4. A saved event, dismissed: no dialog, the buttons stay, and the next tap opens the dialog
@@ -751,12 +756,14 @@ async function checkInstall(browser, base, teamSlug) {
     const s = await installState(page);
     if (s.area) fail(`install: ?team=${teamSlug} shows the install area`);
     if (s.dialog || s.opens !== 0) fail(`install: ?team=${teamSlug} opened #tip-dialog`);
+    if (!s.footer || !s.footerBox) fail(`install: ?team=${teamSlug} hides the footer`);
   });
   await withInstallPage(browser, 'iphone', teamUrl, `install (iPhone ?team=${teamSlug})`, async (page) => {
     const s = await installState(page);
     if (s.area) fail(`install: ?team=${teamSlug} shows the install area with an iPhone user agent`);
     if (s.dialog || s.opens !== 0) fail(`install: ?team=${teamSlug} opened #tip-dialog with an iPhone user agent`);
     if (!s.footer) fail(`install: ?team=${teamSlug} with an iPhone user agent hides the footer's iPhone line`);
+    if (!s.footerBox) fail(`install: ?team=${teamSlug} with an iPhone user agent hides the footer`);
   });
 
   // 7. Running installed (display-mode: standalone, or navigator.standalone on iPhone): no area.
@@ -824,7 +831,7 @@ async function checkInstall(browser, base, teamSlug) {
     }
   }, 360);
 
-  info(`install: Bookmark + Install web app and the reassurance line show on load (footer iPhone line hidden, no tip line, dialog closed); ` +
+  info(`install: Bookmark + Install web app and the reassurance line show on load (footer and its rule hidden, no tip line, dialog closed); the footer shows on team pages and once the area hides; ` +
     `the Bookmark and Install tip dialogs are right for ${Object.keys(INSTALL_UAS).join(', ')}, focus "Got it", reopen on a second tap, and close with "Got it", Escape and the backdrop, returning focus; ` +
     `a saved event prompts once with no dialog, hides the area when accepted and falls back to the dialog after a dismissal; appinstalled hides it; shown on ?team=${UNKNOWN_SLUG}, not on ?team=${teamSlug} or when installed (no dialog either); ` +
     `one row of single-line buttons (${sizes.join('; ')}); cards fit (${cards.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
@@ -862,8 +869,6 @@ const CONTRAST_ROWS = [
   { page: 'home', name: 'Install web app, hover', sel: '#install-button', state: 'hover', fg: '--paper', bg: '--accent-pressed' },
   { page: 'home', name: 'Install web app, pressed', sel: '#install-button', state: 'active', fg: '--paper', bg: '--accent-pressed' },
   { page: 'home', name: 'reassurance line', sel: '.install__reassure', fg: '--muted', bg: 'page' },
-  { page: 'home', name: 'footer', sel: '.footer p', fg: '--muted', bg: 'page' },
-  { page: 'home', name: 'footer link', sel: '.footer a', fg: '--muted', bg: 'page' },
   // tip pop-up, opened from Bookmark
   { page: 'tip', name: 'tip heading', sel: '#tip-dialog-title', fg: '--accent', bg: '--card' },
   { page: 'tip', name: 'tip text', sel: '#tip-dialog-text', fg: '--ink', bg: '--card' },
@@ -891,6 +896,7 @@ const CONTRAST_ROWS = [
   { page: 'team', name: 'thumb icon', sel: 'button.thumb--up', fg: '--accent', bg: '--card', need: 3 },
   { page: 'team', name: 'thumb icon, pressed', sel: 'button.thumb--down', pressThumb: true, fg: '--paper', bg: '--accent', need: 3 },
   { page: 'team', name: 'toast', sel: '#toast', copyFirst: true, fg: '--accent', bg: '--card' },
+  { page: 'team', name: 'footer', sel: '.footer p', fg: '--muted', bg: 'page' },
   // other states
   { page: 'unknown', name: '"We don\'t know that team"', sel: '.notice--unknown', fg: '--ink', bg: '--card' },
   { page: 'empty', name: '"No briefing yet"', sel: '.empty', fg: '--ink', bg: '--card', optional: true },
