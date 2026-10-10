@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. The "amber terminal" restyle and new app icons (Revision 16, 10 Oct 2026, a separate note from the line voice), which replace Revision 10's look and Revision 12's artwork, are on branch `terminal-restyle`, with `check-p2.js` passing locally. They are not merged. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
 
 ## How this document is used
 
@@ -229,8 +229,9 @@ Decisions made while building P2. They include four changes the project owner as
 1. **Thumbs stay on the page until P4.** §4 says a thumbs tap writes to `feedback`, but §7 puts thumbs writes in P4, and P2 was built without starting P4. Each card has thumbs up and down buttons that toggle a pressed state (`aria-pressed`) on the page only. There is no `feedback` write, no `deviceId` and no "You're offline — reaction not saved" toast yet. P4 adds all three to `app.js`.
 2. **P2 reads Supabase live.** §7 lists "wire frontend to live Supabase reads" under P3. But §4's picker and briefings, and `check-p2`, need live reads, so P2 does them. That leaves P3 with what `check-p3.js` asserts: identical comments across browsers, and pipeline idempotency. `check-p3.js` and `verify.js` are not built.
 3. **Palette and manifest.**
+   - *(Replaced by Revision 16 (10 Oct 2026, amber terminal restyle), which lists the current thirteen tokens, a dark palette with `--paper` `#0B0806`. The manifest colours and the `theme-color` meta tag are now `#0B0806`. The Revision 10 palette below is history.)*
    - *(Updated in Revision 10.)* `style.css` defines six colour tokens, and no other colour appears in it: `--paper` `#F2EADB` (page), `--ink` `#1D1B17` (text, rules, the Copy button), `--accent` `#8A3A1C`, `--muted` `#5A5348` (labels, notes, footer), `--rule` `#CDBFA6` (hairlines) and `--card` `#F8F2E6` (the match card). The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, are all `--paper`, `#F2EADB`. *(It was `#1F5C39` and `#F4EFE3` in the P2 build, the two tokens every other colour was mixed from.)*
-   - There's no dark mode, because it would need a second palette that the manifest's colours wouldn't match.
+   - There's no dark mode, because it would need a second palette that the manifest's colours wouldn't match. *(Since Revision 16 (amber terminal) the one palette is dark; there's still no light/dark switch.)*
    - `id`, `start_url` and `scope` are `/`. The three icons in `frontend/icons/` are used unchanged, with the maskable one marked `purpose: maskable`.
    - Chrome reports no manifest or installability errors.
 4. **`config.js`** sets `self.MATCHDAY_CONFIG = { SUPABASE_URL, SUPABASE_ANON_KEY }`, copied once from `.env`. The key is the `sb_publishable_` key. No other `.env` value appears under `frontend/`.
@@ -521,6 +522,8 @@ Implementation notes for the third round:
 
 ### Revision 10 (7 Oct 2026, frontend restyle: design direction A, "Matchday programme")
 
+*(Look replaced by Revision 16 (10 Oct 2026, amber terminal restyle and icons): items 2, 3, 4 and 5's colours, fonts, rules and sizes no longer apply. The naming (item 1), the layout, every behaviour and the data read (item 6) carry over.)*
+
 The project owner chose design direction A, a printed matchday programme look, and renamed what users see. The work is on branch `redesign-programme`. Only `frontend/` and this file change; the pipeline is untouched. Revision 8 item 3 and §4's "Installed look" line are updated to match. Where anything else in §4 or Revision 8 differs on looks, this note takes precedence. Every behaviour is unchanged: card order, the "Last match:" and "Match:" labels, the opposition link rule, Copy, thumbs, Recent, `?match=`, the service worker and the offline cache. Model text still goes in with `textContent`.
 
 1. **Naming.**
@@ -556,6 +559,8 @@ The project owner chose design direction A, a printed matchday programme look, a
 
 ### Revision 11 (7 Oct 2026, team tiles)
 
+*(Colours, corners and fonts replaced by Revision 16 (10 Oct 2026, amber terminal restyle): the four tile tokens have new values, tiles have square corners, and the name is 14px IBM Plex Mono, 12px below 360px. The grid, sizes, states, `touchstart` listener and focus outline carry over.)*
+
 The project owner found that the home page team list didn't look tappable on a phone. Each team in "Premier League teams" is now a filled tile. This is a look-only change on branch `team-tiles`; Recent, the team pages and the pipeline are unchanged.
 
 1. **Tiles.**
@@ -579,6 +584,8 @@ The project owner found that the home page team list didn't look tappable on a p
    - Screenshots, in `review/` (local only): `tiles-home-360x800.png`, `tiles-home-375x812.png`, `tiles-home-390x844.png`, `tiles-hover-1280x800.png` and `tiles-pressed-390x844.png`.
 
 ### Revision 12 (7 Oct 2026, app icons)
+
+*(Artwork replaced by Revision 16 (10 Oct 2026, amber terminal restyle and icons): an amber speech bubble on a near-black square, with an amber ball and a VT323 "?". Items 1 and 2 no longer apply, and `make-icons.js` now embeds VT323 instead of Source Serif 4. The files, sizes, maskable 80% scale, opaque PNGs, links, cache and rebuild process carry over.)*
 
 The project owner approved new app icons to replace the P2 dark green set, which Revision 10 left unmatched to the new palette. The work is on branch `app-icons`. Only the icons, the `<head>` icon links, `sw.js`'s precache list, `check-p2.js`'s manifest check and this file change.
 
@@ -653,6 +660,8 @@ The project owner asked for a one-tap install button on the home page. Before th
    - Screenshots, in `review/` (local only), at 390px wide and scrolled to the bottom, retaken after the 8px margin and the footer change: `install-button-android.png` (after the fake event, with the footer line), `install-button-pressed.png` (the button held down, so in its `:active` state) and `install-hint-iphone.png` (iPhone user agent, without the footer line).
 
 ### Revision 14 (8 Oct 2026, Bookmark + Install web app)
+
+*(Button style replaced by Revision 16 (10 Oct 2026, amber terminal restyle): VT323 24px, square corners and a 1px border, shrinking below 360px wide so the labels still fit. Item 2's fonts, sizes and colours, and its "labels fit at 15px" note, no longer apply.)*
 
 *(Partly superseded by Revision 15: the tips now open in a pop-up card (`#tip-dialog`) instead of the tip line, which is gone, and the two desktop Bookmark tips are shorter. The buttons, the reassurance line, device detection, the install prompt, where the area shows and the footer rule are unchanged.)*
 
@@ -732,6 +741,8 @@ The project owner replaced Revision 13's single install button with a pair: Book
     - `install-pair-desktop.png` is retaken after tapping Install web app, showing the new tip.
 
 ### Revision 15 (8 Oct 2026, tip pop-up)
+
+*(Card style replaced by Revision 16 (10 Oct 2026, amber terminal restyle): item 6's colours, fonts, corners, shadow and backdrop no longer apply. The card's width, padding, layout, opening animation and every behaviour carry over.)*
 
 The project owner found Revision 14's tip line easy to miss. Tapping a button a second time also changed nothing, so the button looked broken. Every tip now opens a pop-up card that can't be missed and reopens on every tap. The work is on branch `tip-dialog`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change. Revision 14, §4, §6 and §9 are updated to match; where Revision 14 differs, this note takes precedence.
 
@@ -929,6 +940,51 @@ Implementation notes for the third round:
 - **No code changes.** Nothing in `scripts/` lists the checker's rule IDs. `safety-check.js` reads whatever rule IDs the checker returns, and any rule marked "fail" fails the comment. A sample reply with `"E10": "fail: blames the keeper"` and `"result": "pass"` comes back from `readVerdict()` as a fail.
 - **The copy check now covers the new example.** The generation prompt quotes "just one save despite us shipping five", so a line that repeats it fails the gate as well as E10.
 - **`PROMPT_VERSION`** is now `2056887e`. It was `86c616ab` in the second round.
+
+### Revision 16 (10 Oct 2026, amber terminal restyle and icons)
+
+*(This is a separate note from Revision 16 (9 Oct 2026, line voice) above; the project owner numbered both 16. Here "Revision 16" means this one wherever it's about the look or the icons.)*
+
+The project owner replaced Revision 10's printed programme look with an "amber terminal" look, and Revision 12's icon artwork to match. The work is on branch `terminal-restyle`. Only `frontend/` (`style.css`, `index.html`, `manifest.webmanifest`, `sw.js`, `fonts/`, `icons/`, one comment in `app.js`), `scripts/icons/`, `check-p2.js` and this file change; the pipeline is untouched. Revisions 8 (item 3), 10, 11, 12, 14 and 15, §4 and §9 are updated to match; where any of them differs on looks, this note takes precedence. Layout, behaviour, copy and every existing check are unchanged.
+
+1. **Fonts**, self-hosted in `frontend/fonts/` as Fontsource 5.3.0 `woff2` builds (SIL OFL 1.1, `fonts/OFL.txt` updated with both copyright lines), each with `font-display: swap` and Fontsource's `unicode-range`:
+   - **VT323** 400, latin and latin-ext, replaces Oswald for headings, labels, codes and buttons. Its characters are exactly 0.4em wide, so it's set about 1.5 times larger than Oswald was. It has no italic.
+   - **IBM Plex Mono** 400, 600 and 400 italic, latin and latin-ext, replaces Source Serif 4 for all body text, the lines and the notes. Its characters are 0.6em wide. 600 is used only by the notices.
+   - The 3 Oswald and 8 Source Serif 4 files and their `@font-face` rules are gone. `sw.js` precaches the 8 new files instead.
+   - The packages were installed with `npm install --no-save`, so `package.json` doesn't list them; the copies in `fonts/` are what's served.
+2. **Colours.** The token names stay, with new values: `--paper` `#0B0806`, `--ink` `#F6E3BF`, `--accent` `#F5A54A`, `--accent-pressed` `#C9832F`, `--muted` `#B39272`, `--rule` `#3B2717`, `--card` and `--tile` `#140E09`, `--tile-edge` `#3B2717`, `--tile-hover` `#F5A54A` and `--tile-pressed` `#C9832F`. Two are new: `--banter` `#E8D7B4` and `--stat` `#9CCB7A`. The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, are `#0B0806`, and `color-scheme` is `dark`.
+   - The page has a faint scanline overlay on top of `--paper`: `repeating-linear-gradient(0deg, rgba(245,165,74,0.035) 0 1px, transparent 1px 3px)`.
+   - Colours written as `rgba` rather than tokens, all listed in `style.css`'s header: the scanlines and the heading glow (`--accent` at 3.5% and 35%), the pressed tile shadow's fallback (`--paper` at 60%), the tip card's glow (`--accent` at 15%) and its backdrop (black at 70%).
+3. **Home page.**
+   - Above the heading, a prompt label, `C:\PREMIER_LEAGUE> talking_points`, in 12px Plex Mono, `--muted`, `aria-hidden`. It replaces Revision 10's "Premier League / Talking points" row.
+   - The heading is VT323, uppercase, `--accent`, with a 10px amber glow, 44px, line-height 0.95. "ludicrous" is on its own line, `skewX(-12deg)` from the left bottom, at `min(86px, (100vw - 32px) / 3.9)`: 86px from 368px wide up, 84.1px at 360px and 73.8px at 320px. It's uppercase like the rest of the heading.
+   - After "night?" a blinking amber block cursor, 18 × 34px, `aria-hidden`, `steps(1)` over 1.1s, lit without blinking under `prefers-reduced-motion`. "night?" and the cursor are in a `white-space: nowrap` span, because at 390px the cursor alone would otherwise wrap onto its own line.
+   - The masthead's 3px and double rules are replaced by one 1px `--rule` line under it. The intro is Plex Mono 15px.
+   - Section headings read "> Recent" and "> Premier League teams", VT323 24px, `--accent`, with no rule after them. The "> " is CSS generated content with empty alt text, so screen readers read only the words.
+   - Recent pills: square corners, 1px `--accent` border, transparent, `--ink` text, 14px Plex Mono, at least 44px tall.
+   - Team tiles: the same grid and sizes, square corners, 1px `--tile-edge` border, `--tile` fill. The code is VT323 22px `--accent` in a 28px slot; the name Plex Mono 14px `--ink`, and 12px below 360px wide, where "Bournemouth" (92.4px at 14px) no longer fits. Padding is 6px 8px 6px 10px. Hover (fine pointers only) is `--tile-hover` and pressed `--tile-pressed`, both with `--paper` text; the inset pressed shadow, the `touchstart` listener and the 2px `--accent` focus outline stay.
+   - Bookmark and Install web app: VT323 uppercase, square corners, 1px `--accent` border, 6px side padding, 8px apart. Install web app is `--accent` with `--paper` text, `--accent-pressed` on hover and press. Bookmark is transparent with `--accent` text, and on hover and press fills with `--tile-pressed` and `--paper` text. The reassurance line is 13px `--muted`.
+   - **Install label size.** At 24px, "INSTALL WEB APP" is 144px, and the button leaves `50vw - 34px` for it. So the labels are `min(24px, (50vw - 34px) / 6.05)`: 24px from 360px wide up and 20.8px at 320px, where 24px can't fit two buttons side by side. "Got it" is always 24px.
+   - Footer: 1px `--rule` top border, 12px `--muted`.
+4. **Team page.**
+   - The compact heading is VT323 24px `--accent`, uppercase, with "ludicrous" skewed -12deg (`inline-block`, since a transform needs it) and no cursor or prompt label. "← All teams" is Plex Mono 14px `--accent`, at least 44px tall.
+   - "Last match:" is 12px uppercase `--muted`. The team name is VT323 `--accent` with the glow, at `min(66px, (100vw - 32px) / 4.6)`: 66px from 336px wide up, so "BOURNEMOUTH" (290px at 66px) never breaks at 320px.
+   - Score box: 1px `--accent` border, no fill. Team names Plex Mono 16px uppercase; scores VT323 56px. Our team is `--accent`, the opposition `--ink`. The half-time line is 13px `--muted`, under a dashed `--rule` line that separates it from the scores.
+   - Line cards: `--card` fill, 1px `--rule` border, square corners, 12px apart. Labels "> HOT TAKE", "> BANTER" and "> STAT" in VT323 22px, `--accent`, `--banter` and `--stat`, with no rule after them; the "> " is generated content, so the tag's text is still exactly the type. Line text Plex Mono 15px, line-height 1.6; note 13px italic `--muted`.
+   - Copy line (and Try again): `--accent` fill, `--paper` text, VT323 22px, `--accent-pressed` on hover and press. Thumbs: 1px `--accent` border and icon; pressed (`aria-pressed="true"`) is an `--accent` fill with a `--paper` icon.
+   - The notices, "No briefing yet", the offline banner and the toast are restyled to match.
+5. **Tip pop-up.** `--card` fill, 1px `--accent` border, square corners, a faint amber glow. Heading VT323 26px `--accent`; text Plex Mono 15px `--ink`; ⋮ ☆ ⌘ in `--accent`, 20px, still from the system font, since Plex Mono hasn't got them. Backdrop `rgba(0,0,0,0.7)`. "Got it" is `--accent` with `--paper` text in VT323. All behaviour is unchanged.
+6. **App icons.** `scripts/icons/icon-master.svg`, `scripts/icons/favicon.svg` and `frontend/icons/favicon.svg` are the project owner's artwork, word for word: an amber speech bubble with a soft amber halo on a `#0B0806` square, holding an amber football and, in the master, a VT323 "?". `make-icons.js` embeds `frontend/fonts/vt323-latin-400-normal.woff2`, still blocks every network request, and stops unless the VT323 face's status is `loaded` (`document.fonts.check()` alone can pass for a face that failed). All five PNGs are regenerated: same names and sizes, maskable at 80%, all 8-bit RGB with no alpha.
+7. **Check.** `check-p2.js` gains a look step (§9). It also changes in two places:
+   - The install step's width check runs at 320px as well as 360px and 390px.
+   - The tip card's "open animation finished" wait now looks only at the dialog's own animations, because the cursor's infinite animation never finishes.
+
+**Findings** (10 Oct 2026).
+- `check-p2.js --base http://127.0.0.1:8080` passes: 20 picker entries, 20 team pages (8 briefings, 12 "No briefing yet"), no console errors, secrets checked across 21 frontend files, and the new look step. All 51 contrast pairs pass, and 17 are under 7:1. The lowest are `--paper` on `--accent-pressed`/`--tile-pressed` at 6.44:1 (every pressed state, and Bookmark's hover), and `--muted` on the page or a card at 6.63–6.66:1 (the prompt label, "Last match:", the half-time line, notes, the reassurance line, the footer, the offline notice and "Loading…").
+- At 320, 360 and 390px nothing scrolls sideways, no team name breaks inside a word, and the install buttons are side by side on one line each (140, 160 and 175px wide, 48px tall). "ludicrous" has 7.3, 8.3 and 31px to spare.
+- A deliberately broken copy, served from the scratchpad with `--muted` at `#5A4636` and "ludicrous" fixed at 86px, failed with 12 problems: 9 contrast pairs at about 2.2:1, and at 320px "ludicrous" outside the column (16–343px against 16–304px) plus 24px of sideways scroll, reported by both the look and install steps.
+- The new checks caught one real problem in the first build: at 390px the cursor wrapped onto a line of its own below "NIGHT?". That's the `nowrap` span in item 3.
+- Screenshots, in `review/` (local only): `home-390.png`, `home-360.png`, `home-320.png`, `team-390.png` (Sunderland, scrolled to the score box and cards), `tile-pressed-390.png` (Sunderland's tile forced into `:active`), `tip-dialog-390.png` (Android, Bookmark), `desktop-1280.png` and `icons-preview.png` (`icon-512`, the maskable icon in circle and rounded-square crops, `icon-192` and `apple-touch-icon` on dark and light home screens, and the favicon at 16px, 32px and 32px at 4×).
 
 ## 1. Architecture
 
@@ -1636,7 +1692,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
   - The card closes with "Got it", Escape, a tap on the backdrop or Android's back gesture, and reopens on every tap.
   - Neither shows on team pages or when the site is already running installed.
   - The footer's one-line iPhone help ("On iPhone: Share → Add to Home Screen") is hidden while the buttons show, and shows everywhere else.
-- **Installed look:** `display: standalone`, theme and background colours both `#F2EADB` (the page colour, `--paper`), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
+- **Installed look:** `display: standalone`, theme and background colours both `#0B0806` (the page colour, `--paper`, since Revision 16's amber terminal restyle), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
 
 ## 5. Testers (P4)
 
@@ -1735,7 +1791,12 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
     - `appinstalled` hides the area.
     - The unknown-team page shows the area. A team page doesn't, and the card never opens there. With an iPhone user agent, a team page shows the footer's iPhone line.
     - Running installed (`display-mode: standalone` or `navigator.standalone` stubbed) shows no area, and the card never opens.
-    - At 360px and 390px wide, both buttons are single-line (under 56px tall) and sit side by side on one row. The card fits the viewport with at least 16px each side, and no text overflows it.
+    - At 320px, 360px and 390px wide, both buttons are single-line (under 56px tall) and sit side by side on one row. The card fits the viewport with at least 16px each side, and no text overflows it.
+  - **Look (Revision 16, amber terminal):**
+    - VT323 and IBM Plex Mono load from `fonts/`, and no Oswald or Source Serif 4 face is declared. The heading is VT323 and the body IBM Plex Mono. The manifest's `theme_color` and `background_color` and the `theme-color` meta tag equal `--paper`.
+    - **Contrast:** every text/background pair the site uses, including hover, pressed, the tip card and the install buttons, is measured in the page and must still use the tokens its row names. It fails below 4.5:1, or 3:1 for text 24px and up (3:1 for the thumbs' icons). The page background counts as `--paper` under a scanline, its lightest. The table is printed, with pairs under 7:1 marked.
+    - At 320px, 360px and 390px wide: no sideways scroll on the home page or a briefing page, "ludicrous" inside the column on one line, the cursor on the same line as "night?", and no tile name, team heading or score-box name broken inside a word or spilling out. Every team's heading is checked at 320px.
+    - The prompt label and the cursor are `aria-hidden`, and the cursor doesn't blink under `prefers-reduced-motion`.
   - `manifest.webmanifest` has `name`, `start_url`, `display: "standalone"` and 192px + 512px icons. Every manifest icon returns HTTP 200 and its real pixel size matches its `sizes`, and exactly one is `maskable`. The `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` linked from `index.html` each return 200, and the two PNGs are 32×32 and 180×180 (Revision 12). `sw.js` returns 200 with a JavaScript content type.
   - **Secrets check:** fetches every deployed file under `frontend/` (HTML, JS, CSS, manifest) and fails if the value of `FOOTBALL_DATA_API_KEY`, `ANTHROPIC_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` appears in any of them.
 - **`scripts/check-p3.js --match <id>`:**

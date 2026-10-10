@@ -1,8 +1,8 @@
-Oswald (oswald-*.woff2):
-Copyright 2016 The Oswald Project Authors (https://github.com/googlefonts/OswaldFont)
+VT323 (vt323-*.woff2):
+Copyright 2011, The VT323 Project Authors (peter.hull@oikoi.com)
 
-Source Serif 4 (source-serif-4-*.woff2):
-Copyright 2014-2023 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+IBM Plex Mono (ibm-plex-mono-*.woff2):
+Copyright 2017 IBM Corp. All rights reserved.
 
 The woff2 files are Fontsource builds (https://fontsource.org), served unmodified.
 

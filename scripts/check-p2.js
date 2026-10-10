@@ -591,10 +591,11 @@ async function cardFits(page, label) {
   return `${label}: ${Math.round(m.width)}px wide, ${Math.round(m.left)}px each side`;
 }
 
-// The open animation is 150 ms; measurements wait for it, so the card isn't caught mid-scale.
+// The open animation is 150 ms; measurements wait for it, so the card isn't caught mid-scale. Only the
+// dialog's own animations (and its backdrop's) count: the heading's cursor blinks for ever.
 const animationsDone = (page, label) => waitInPage(page, label, 'the open animation to finish',
-  () => document.getAnimations().every((a) => a.playState === 'finished'), null,
-  () => page.evaluate(() => `${document.getAnimations().length} animations running`));
+  () => document.getElementById('tip-dialog').getAnimations({ subtree: true }).every((a) => a.playState === 'finished'), null,
+  () => page.evaluate(() => `${document.getElementById('tip-dialog').getAnimations({ subtree: true }).length} dialog animations running`));
 
 // Returns whether app.js called preventDefault() on it.
 const fakeInstallPrompt = (page, outcome) => page.evaluate((result) => {
@@ -783,13 +784,13 @@ async function checkInstall(browser, base, teamSlug) {
     }
   }
 
-  // 8. At 360px and 390px: each label on one line, the two buttons side by side on one row, and the
-  //    tip card inside the viewport.
+  // 8. At 320px, 360px and 390px: each label on one line, the two buttons side by side on one row, and
+  //    the tip card inside the viewport.
   const sizes = [];
   const cards = [];
-  for (const width of [360, 390]) {
+  for (const width of LOOK_WIDTHS) {
     await withInstallPage(browser, 'android', home, `install (${width}px)`, async (page) => {
-      await waitInPage(page, `${width}px`, 'document.fonts to finish loading (the label widths depend on Oswald)',
+      await waitInPage(page, `${width}px`, 'document.fonts to finish loading (the label widths depend on VT323)',
         () => document.fonts.status === 'loaded', null, () => page.evaluate(() => `document.fonts.status "${document.fonts.status}"`));
       const m = await page.evaluate(() => {
         const box = (id) => {
@@ -829,6 +830,394 @@ async function checkInstall(browser, base, teamSlug) {
     `one row of single-line buttons (${sizes.join('; ')}); cards fit (${cards.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
+// ---------------------------------------------------------------- look (amber terminal, Revision 16)
+
+const LOOK_WIDTHS = [320, 360, 390];
+const OLD_FONTS = ['Oswald', 'Source Serif 4'];
+
+// Every text/background pair the site uses, with WCAG 2 contrast. A row with a selector is measured
+// in the page: the element's computed colour, and the first background behind it that isn't
+// transparent. Its colours must still be the row's tokens, so the table can't drift from style.css.
+// `state` forces :hover or :active on `on` (the element carrying the state) before measuring. Rows
+// without a selector are pages the check doesn't open in this step (loading, offline, error); they're
+// worked out from the tokens. "page" is --paper under a scanline, the lightest the page gets.
+// `need` overrides the text rule, for the thumbs' icons (3:1 for graphics, WCAG 1.4.11).
+const CONTRAST_ROWS = [
+  // home
+  { page: 'home', name: 'prompt label', sel: '.masthead__prompt', fg: '--muted', bg: 'page' },
+  { page: 'home', name: 'heading', sel: '.masthead__title', fg: '--accent', bg: 'page' },
+  { page: 'home', name: 'intro', sel: '.intro', fg: '--ink', bg: 'page' },
+  { page: 'home', name: 'section heading', sel: '#picker-heading', fg: '--accent', bg: 'page' },
+  { page: 'home', name: 'Recent pill', sel: '.team-list--pills .team-link', fg: '--ink', bg: 'page' },
+  { page: 'home', name: 'tile code', sel: '#picker .team-link__code', fg: '--accent', bg: '--tile' },
+  { page: 'home', name: 'tile name', sel: '#picker .team-link__name', fg: '--ink', bg: '--tile' },
+  { page: 'home', name: 'tile code, hover', sel: '#picker .team-link__code', on: '#picker .team-link', state: 'hover', fg: '--paper', bg: '--tile-hover' },
+  { page: 'home', name: 'tile name, hover', sel: '#picker .team-link__name', on: '#picker .team-link', state: 'hover', fg: '--paper', bg: '--tile-hover' },
+  { page: 'home', name: 'tile code, pressed', sel: '#picker .team-link__code', on: '#picker .team-link', state: 'active', fg: '--paper', bg: '--tile-pressed' },
+  { page: 'home', name: 'tile name, pressed', sel: '#picker .team-link__name', on: '#picker .team-link', state: 'active', fg: '--paper', bg: '--tile-pressed' },
+  { page: 'home', name: 'Bookmark', sel: '#bookmark-button', fg: '--accent', bg: 'page' },
+  { page: 'home', name: 'Bookmark, hover', sel: '#bookmark-button', state: 'hover', fg: '--paper', bg: '--tile-pressed' },
+  { page: 'home', name: 'Bookmark, pressed', sel: '#bookmark-button', state: 'active', fg: '--paper', bg: '--tile-pressed' },
+  { page: 'home', name: 'Install web app', sel: '#install-button', fg: '--paper', bg: '--accent' },
+  { page: 'home', name: 'Install web app, hover', sel: '#install-button', state: 'hover', fg: '--paper', bg: '--accent-pressed' },
+  { page: 'home', name: 'Install web app, pressed', sel: '#install-button', state: 'active', fg: '--paper', bg: '--accent-pressed' },
+  { page: 'home', name: 'reassurance line', sel: '.install__reassure', fg: '--muted', bg: 'page' },
+  { page: 'home', name: 'footer', sel: '.footer p', fg: '--muted', bg: 'page' },
+  { page: 'home', name: 'footer link', sel: '.footer a', fg: '--muted', bg: 'page' },
+  // tip pop-up, opened from Bookmark
+  { page: 'tip', name: 'tip heading', sel: '#tip-dialog-title', fg: '--accent', bg: '--card' },
+  { page: 'tip', name: 'tip text', sel: '#tip-dialog-text', fg: '--ink', bg: '--card' },
+  { page: 'tip', name: 'tip symbol', sel: '.tip-sym', fg: '--accent', bg: '--card' },
+  { page: 'tip', name: '"Got it"', sel: '#tip-dialog-close', fg: '--paper', bg: '--accent' },
+  { page: 'tip', name: '"Got it", pressed', sel: '#tip-dialog-close', state: 'active', fg: '--paper', bg: '--accent-pressed' },
+  // team page with a briefing
+  { page: 'team', name: 'compact heading', sel: '.masthead__title', fg: '--accent', bg: 'page' },
+  { page: 'team', name: 'back link', sel: '.back-link', fg: '--accent', bg: 'page' },
+  { page: 'team', name: '"Last match:" label', sel: '.match__label', fg: '--muted', bg: 'page' },
+  { page: 'team', name: 'team name', sel: '.team-name', fg: '--accent', bg: 'page' },
+  { page: 'team', name: 'score box, our team', sel: '.match__row--own .match__team', fg: '--accent', bg: 'page' },
+  { page: 'team', name: 'score box, our score', sel: '.match__row--own .match__goals', fg: '--accent', bg: 'page' },
+  { page: 'team', name: 'score box, opposition', sel: '.match__row:not(.match__row--own) .match__team', fg: '--ink', bg: 'page' },
+  { page: 'team', name: 'score box, their score', sel: '.match__row:not(.match__row--own) .match__goals', fg: '--ink', bg: 'page' },
+  { page: 'team', name: 'half-time line', sel: '.match__meta', fg: '--muted', bg: 'page' },
+  { page: 'team', name: 'opposition link', sel: '.opponent-link', fg: '--accent', bg: 'page', optional: true },
+  { page: 'team', name: '> HOT TAKE', sel: '.tag--hot-take', fg: '--accent', bg: '--card' },
+  { page: 'team', name: '> BANTER', sel: '.tag--banter', fg: '--banter', bg: '--card' },
+  { page: 'team', name: '> STAT', sel: '.tag--stat', fg: '--stat', bg: '--card' },
+  { page: 'team', name: 'line text', sel: '.card__text', fg: '--ink', bg: '--card' },
+  { page: 'team', name: 'note', sel: '.card__note', fg: '--muted', bg: '--card' },
+  { page: 'team', name: 'Copy line', sel: 'button.copy', fg: '--paper', bg: '--accent' },
+  { page: 'team', name: 'Copy line, pressed', sel: 'button.copy', state: 'active', fg: '--paper', bg: '--accent-pressed' },
+  { page: 'team', name: 'thumb icon', sel: 'button.thumb--up', fg: '--accent', bg: '--card', need: 3 },
+  { page: 'team', name: 'thumb icon, pressed', sel: 'button.thumb--down', pressThumb: true, fg: '--paper', bg: '--accent', need: 3 },
+  { page: 'team', name: 'toast', sel: '#toast', copyFirst: true, fg: '--accent', bg: '--card' },
+  // other states
+  { page: 'unknown', name: '"We don\'t know that team"', sel: '.notice--unknown', fg: '--ink', bg: '--card' },
+  { page: 'empty', name: '"No briefing yet"', sel: '.empty', fg: '--ink', bg: '--card', optional: true },
+  { page: null, name: 'Loading… / status', fg: '--muted', bg: 'page', size: 15 },
+  { page: null, name: 'offline notice', fg: '--muted', bg: '--card', size: 13 },
+  { page: null, name: 'error notice', fg: '--ink', bg: '--card', size: 15 },
+  { page: null, name: 'Try again', fg: '--paper', bg: '--accent', size: 22 },
+];
+
+const hex = (rgb) => `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+
+function parseColour(text) {
+  const s = String(text).trim();
+  let m = s.match(/^#([0-9a-f]{6})$/i);
+  if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  m = s.match(/^rgba?\(([^)]+)\)$/i);
+  if (m) {
+    const parts = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    return parts.length === 4 && parts[3] === 0 ? null : parts.slice(0, 3);
+  }
+  return null;
+}
+
+function luminance(rgb) {
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// 4.5:1, or 3:1 for text 24px and up.
+const needFor = (row, size) => row.need || (size >= 24 ? 3 : 4.5);
+
+// In the page: the element's colour, the background behind it ("page" when nothing but body is
+// behind it) and its font size.
+const measureColours = (page, sel) => page.evaluate((selector) => {
+  const el = [...document.querySelectorAll(selector)].find((e) => e.checkVisibility());
+  if (!el) return null;
+  let bg = null;
+  for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    const c = getComputedStyle(n).backgroundColor;
+    if (!/rgba\([^)]*,\s*0\)$/.test(c) && c !== 'transparent') { bg = c; break; }
+  }
+  const style = getComputedStyle(el);
+  return { fg: style.color, bg: bg || 'page', size: parseFloat(style.fontSize) };
+}, sel);
+
+// Forces :hover or :active on an element through the DevTools protocol (a real press on a tile would
+// follow its link). Returns a function that clears it.
+async function forceState(page, selector, state) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('DOM.enable');
+  await cdp.send('CSS.enable');
+  const { root } = await cdp.send('DOM.getDocument');
+  const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+  if (!nodeId) { await cdp.detach(); return null; }
+  await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [state] });
+  return async () => {
+    await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+    await cdp.detach();
+  };
+}
+
+// The text in el broken across lines inside a word (between two non-space characters, not after a
+// hyphen). Returns the words where that happens.
+const MID_WORD_BREAKS = (el) => {
+  const words = [];
+  const range = document.createRange();
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let prev = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (let i = 0; i < node.length; i += 1) {
+      range.setStart(node, i);
+      range.setEnd(node, i + 1);
+      const rect = range.getClientRects()[0];
+      const ch = node.data[i];
+      if (!rect) { prev = null; continue; }
+      if (prev && /\S/.test(ch) && /\S/.test(prev.ch) && prev.ch !== '-' && rect.top > prev.top + 2) words.push(el.textContent.trim());
+      prev = { ch, top: rect.top };
+    }
+  }
+  return words;
+};
+
+async function checkLook(browser, base, currentTeams, expected) {
+  const started = Date.now();
+  const briefingTeam = currentTeams.find((t) => expected.get(t.slug).latest);
+  const emptyTeam = currentTeams.find((t) => !expected.get(t.slug).latest);
+
+  // Theme colours: the manifest and the meta tag are --paper.
+  const manifest = await (await fetch(`${base}/manifest.webmanifest`)).json();
+  const html = await (await fetch(`${base}/`)).text();
+  const metaTheme = (html.match(/<meta\s+name="theme-color"\s+content="([^"]+)"/) || [])[1];
+
+  // An Android user agent, so the Bookmark tip has its ⋮ and ☆ symbols; no touch emulation, so the
+  // mouse-only hover rules apply.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent: INSTALL_UAS.android });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
+  // Two recent teams, so Recent's pills show.
+  await context.addInitScript((slugs) => {
+    if (!localStorage.getItem('recentTeams')) localStorage.setItem('recentTeams', JSON.stringify(slugs));
+  }, currentTeams.slice(0, 2).map((t) => t.slug));
+  const rows = [];
+  let tokens = null;
+  try {
+    const pages = {
+      home: `${base}/`,
+      team: briefingTeam && `${base}/?team=${encodeURIComponent(briefingTeam.slug)}`,
+      unknown: `${base}/?team=${UNKNOWN_SLUG}`,
+      empty: emptyTeam && `${base}/?team=${encodeURIComponent(emptyTeam.slug)}`,
+    };
+    for (const [key, url] of Object.entries(pages)) {
+      if (!url) continue;
+      const v = await visit(context, url);
+      commonPageProblems(`look (${key})`, v);
+      const { page } = v;
+      await page.evaluate(() => document.fonts.ready);
+
+      if (key === 'home') {
+        tokens = await page.evaluate(() => {
+          const root = getComputedStyle(document.documentElement);
+          const names = ['--paper', '--ink', '--accent', '--accent-pressed', '--muted', '--rule', '--card', '--tile', '--tile-edge', '--tile-hover', '--tile-pressed', '--banter', '--stat'];
+          const scan = (getComputedStyle(document.body).backgroundImage.match(/rgba\([^)]+\)/) || [])[0] || null;
+          return { values: Object.fromEntries(names.map((n) => [n, root.getPropertyValue(n).trim()])), scan };
+        });
+        // Fonts: VT323 and IBM Plex Mono load from fonts/, and Oswald and Source Serif 4 are gone.
+        const fonts = await page.evaluate(() => ({
+          faces: [...document.fonts].map((f) => ({ family: f.family.replace(/"/g, ''), style: f.style, weight: f.weight, status: f.status })),
+          heading: getComputedStyle(document.querySelector('.masthead__title')).fontFamily,
+          body: getComputedStyle(document.body).fontFamily,
+          prompt: document.querySelector('.masthead__prompt')?.getAttribute('aria-hidden'),
+          cursor: document.querySelector('.masthead__title .cursor')?.getAttribute('aria-hidden'),
+          cursorAnimation: getComputedStyle(document.querySelector('.masthead__title .cursor') || document.body).animationName,
+        }));
+        for (const old of OLD_FONTS) if (fonts.faces.some((f) => f.family === old)) fail(`look: style.css still declares ${old}`);
+        for (const [family, style] of [['VT323', 'normal'], ['IBM Plex Mono', 'normal']]) {
+          if (!fonts.faces.some((f) => f.family === family && f.style === style && f.status === 'loaded')) fail(`look: ${family} ${style} didn't load on the home page`);
+        }
+        if (!/^"?VT323"?/.test(fonts.heading)) fail(`look: the heading's font is ${fonts.heading}, expected VT323 first`);
+        if (!/^"?IBM Plex Mono"?/.test(fonts.body)) fail(`look: the body font is ${fonts.body}, expected IBM Plex Mono first`);
+        if (fonts.prompt !== 'true') fail('look: the C:\\PREMIER_LEAGUE> label is missing or not aria-hidden');
+        if (fonts.cursor !== 'true') fail('look: the block cursor after "night?" is missing or not aria-hidden');
+        if (fonts.cursorAnimation !== 'cursor-blink') fail(`look: the cursor's animation is "${fonts.cursorAnimation}", expected cursor-blink`);
+      }
+      if (key === 'team') {
+        const italic = await page.evaluate(() => [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'IBM Plex Mono' && f.style === 'italic' && f.status === 'loaded'));
+        if (!italic) fail('look: IBM Plex Mono italic (the notes) didn\'t load on the team page');
+      }
+
+      const pageRows = CONTRAST_ROWS.filter((r) => r.page === key || (key === 'home' && r.page === 'tip'));
+      for (const row of pageRows) {
+        if (row.page === 'tip' && !(await page.evaluate(() => document.getElementById('tip-dialog').open))) {
+          await page.locator('#bookmark-button').click();
+          await page.waitForFunction(() => document.getElementById('tip-dialog').open, null, { timeout: INSTALL_WAIT_MS });
+          await animationsDone(page, 'look (tip pop-up)');
+        }
+        if (row.copyFirst) {
+          await page.locator('button.copy').first().click();
+          await page.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: INSTALL_WAIT_MS });
+        }
+        if (row.pressThumb) await page.locator(row.sel).first().click();
+        const clear = row.state ? await forceState(page, row.on || row.sel, row.state) : null;
+        const got = await measureColours(page, row.sel);
+        if (clear) await clear();
+        if (row.pressThumb) await page.locator(row.sel).first().click();
+        if (!got) {
+          if (!row.optional) fail(`look: contrast row "${row.name}": no visible ${row.sel} on the ${key} page`);
+          continue;
+        }
+        rows.push({ row, got });
+      }
+      await page.close();
+    }
+  } finally {
+    await context.close();
+  }
+
+  // The table. Measured colours must match the row's tokens.
+  if (!tokens) { fail('look: the home page didn\'t load, so contrast wasn\'t checked'); return; }
+  const tok = (name) => parseColour(tokens.values[name]);
+  const scan = parseColour(tokens.scan || '') || [0, 0, 0];
+  const scanAlpha = Number(((tokens.scan || '').match(/,\s*([\d.]+)\)$/) || [])[1] || 0);
+  const pageColour = tok('--paper').map((p, i) => p + (scan[i] - p) * scanAlpha);
+  const colourOf = (name) => (name === 'page' ? pageColour : tok(name));
+  if (!tok('--paper')) fail('look: --paper is not a colour');
+  else {
+    const paper = hex(tok('--paper'));
+    for (const [field, value] of [['manifest theme_color', manifest.theme_color], ['manifest background_color', manifest.background_color], ['theme-color meta tag', metaTheme]]) {
+      if (String(value).toUpperCase() !== paper) fail(`look: ${field} is ${value}, expected --paper ${paper}`);
+    }
+  }
+
+  const table = [];
+  const measured = new Set(rows.map((r) => r.row));
+  for (const row of CONTRAST_ROWS) {
+    const m = rows.find((r) => r.row === row);
+    if (!m && row.page) continue; // optional and absent, or already failed above
+    const wantFg = colourOf(row.fg);
+    const wantBg = colourOf(row.bg);
+    let fg = wantFg;
+    let bg = wantBg;
+    let size = row.size;
+    if (m) {
+      fg = parseColour(m.got.fg);
+      bg = m.got.bg === 'page' ? pageColour : parseColour(m.got.bg);
+      size = m.got.size;
+      if (!fg || hex(fg) !== hex(wantFg)) fail(`look: "${row.name}" text is ${m.got.fg}, expected ${row.fg} (${hex(wantFg)}); update CONTRAST_ROWS if the design changed`);
+      if (!bg || hex(bg) !== hex(wantBg)) fail(`look: "${row.name}" sits on ${m.got.bg}, expected ${row.bg} (${hex(wantBg)}); update CONTRAST_ROWS if the design changed`);
+    }
+    if (!fg || !bg) continue;
+    const ratio = contrast(fg, bg);
+    const need = needFor(row, size);
+    if (ratio < need) fail(`look: "${row.name}" is ${ratio.toFixed(2)}:1 (${row.fg} ${hex(fg)} on ${row.bg} ${hex(bg)}, ${size}px), under ${need}:1`);
+    table.push({ row, fg, bg, size, ratio, need, measured: measured.has(row) });
+  }
+  console.log('  contrast (WCAG 2; "page" is --paper under a scanline; * = under 7:1):');
+  console.log(`    ${'pair'.padEnd(28)} ${'text'.padEnd(24)} ${'background'.padEnd(26)} ${'size'.padStart(6)}  ${'ratio'.padStart(7)}  need`);
+  for (const t of table) {
+    const mark = t.ratio < t.need ? ' FAIL' : t.ratio < 7 ? ' *' : '';
+    console.log(`    ${t.row.name.padEnd(28)} ${`${t.row.fg} ${hex(t.fg)}`.padEnd(24)} ${`${t.row.bg} ${hex(t.bg)}`.padEnd(26)} ${(t.row.need ? 'icon' : `${Math.round(t.size * 10) / 10}px`).padStart(6)}  ${t.ratio.toFixed(2).padStart(6)}:1  ${t.need}:1${t.measured ? '' : ' (tokens)'}${mark}`);
+  }
+
+  // Phone widths: no sideways scroll, "ludicrous" inside the column, no tile name broken inside a
+  // word, and on a team page the same for its heading and score box.
+  const layout = [];
+  for (const width of LOOK_WIDTHS) {
+    const ctx = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+      const v = await visit(ctx, `${base}/`);
+      await v.page.evaluate(() => document.fonts.ready);
+      const m = await v.page.evaluate((breaksSrc) => {
+        const breaks = new Function(`return (${breaksSrc})`)();
+        const em = document.querySelector('.masthead__title em');
+        const r = em.getBoundingClientRect();
+        const col = document.querySelector('.masthead').getBoundingClientRect();
+        const size = parseFloat(getComputedStyle(em).fontSize);
+        const tiles = [...document.querySelectorAll('#picker .team-link__name')];
+        return {
+          scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          em: { left: r.left, right: r.right, height: r.height, colLeft: col.left, colRight: col.right, size },
+          broken: tiles.flatMap((n) => breaks(n)),
+          spills: tiles.filter((n) => n.scrollWidth > n.clientWidth + 1 || n.getBoundingClientRect().right > n.parentElement.getBoundingClientRect().right).map((n) => n.textContent),
+          names: tiles.length,
+          // "night?" and the cursor on one line, so the cursor is never alone.
+          cursorLines: (() => {
+            const end = document.querySelector('.masthead__end');
+            const cursor = document.querySelector('.cursor');
+            if (!end || !cursor) return 0;
+            const text = document.createRange();
+            text.selectNodeContents(end.firstChild);
+            return Math.abs(text.getBoundingClientRect().bottom - cursor.getBoundingClientRect().bottom) < 12 ? 1 : 2;
+          })(),
+        };
+      }, MID_WORD_BREAKS.toString());
+      if (m.scroll > 0) fail(`look: at ${width}px the home page scrolls sideways by ${m.scroll}px`);
+      if (m.em.left < m.em.colLeft - 0.5 || m.em.right > m.em.colRight + 0.5) fail(`look: at ${width}px "ludicrous" runs from ${m.em.left.toFixed(1)} to ${m.em.right.toFixed(1)}px, outside the column (${m.em.colLeft}-${m.em.colRight}px)`);
+      if (m.em.height > m.em.size * 1.5) fail(`look: at ${width}px "ludicrous" wraps (${m.em.height.toFixed(0)}px tall at ${m.em.size.toFixed(1)}px)`);
+      if (m.cursorLines !== 1) fail(`look: at ${width}px the cursor is ${m.cursorLines ? 'on a line of its own' : 'missing (or "night?" isn\'t in .masthead__end)'}`);
+      for (const name of m.broken) fail(`look: at ${width}px the tile "${name}" breaks inside a word`);
+      for (const name of m.spills) fail(`look: at ${width}px the tile name "${name}" spills out of its tile`);
+      await v.page.close();
+
+      let teamNote = 'no briefing to check';
+      if (briefingTeam) {
+        const t = await visit(ctx, `${base}/?team=${encodeURIComponent(briefingTeam.slug)}`);
+        await t.page.evaluate(() => document.fonts.ready);
+        const tm = await t.page.evaluate((breaksSrc) => {
+          const breaks = new Function(`return (${breaksSrc})`)();
+          return {
+            scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            broken: [...document.querySelectorAll('.team-name, .match__team')].flatMap((n) => breaks(n)),
+          };
+        }, MID_WORD_BREAKS.toString());
+        if (tm.scroll > 0) fail(`look: at ${width}px ?team=${briefingTeam.slug} scrolls sideways by ${tm.scroll}px`);
+        for (const name of tm.broken) fail(`look: at ${width}px ?team=${briefingTeam.slug} breaks "${name}" inside a word`);
+        teamNote = `?team=${briefingTeam.slug} fits`;
+        await t.page.close();
+      }
+      layout.push(`${width}px: "ludicrous" ${m.em.size.toFixed(1)}px, ${(m.em.colRight - m.em.right).toFixed(1)}px to spare; ${m.names} tile names whole; ${teamNote}`);
+    } finally {
+      await ctx.close();
+    }
+  }
+
+  // Every team's heading at 320px, the narrowest width: the name is never broken inside a word. The
+  // heading only grows with the screen up to 66px, which it reaches at 336px, so 320px is the worst case.
+  const narrow = await browser.newContext({ viewport: { width: 320, height: 700 }, isMobile: true, hasTouch: true });
+  try {
+    for (const team of currentTeams) {
+      const v = await visit(narrow, `${base}/?team=${encodeURIComponent(team.slug)}`);
+      await v.page.evaluate(() => document.fonts.ready);
+      const m = await v.page.evaluate((breaksSrc) => {
+        const breaks = new Function(`return (${breaksSrc})`)();
+        const h1 = document.querySelector('.team-name');
+        return { broken: h1 ? breaks(h1) : [], scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      }, MID_WORD_BREAKS.toString());
+      for (const name of m.broken) fail(`look: at 320px the heading "${name}" breaks inside a word`);
+      if (m.scroll > 0) fail(`look: at 320px ?team=${team.slug} scrolls sideways by ${m.scroll}px`);
+      await v.page.close();
+    }
+  } finally {
+    await narrow.close();
+  }
+
+  // Reduced motion: the cursor doesn't blink.
+  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  try {
+    const v = await visit(still, `${base}/`);
+    const anim = await v.page.evaluate(() => getComputedStyle(document.querySelector('.masthead__title .cursor')).animationName);
+    if (anim !== 'none') fail(`look: under prefers-reduced-motion the cursor's animation is "${anim}", expected none`);
+    await v.page.close();
+  } finally {
+    await still.close();
+  }
+
+  const under7 = table.filter((t) => t.ratio < 7).length;
+  const passing = table.filter((t) => t.ratio >= t.need).length;
+  info(`look: fonts and theme colours checked; ${passing} of ${table.length} contrast pairs pass (${under7} under 7:1); ` +
+    `${layout.join('; ')}; all ${currentTeams.length} team headings whole at 320px; cursor still under reduced motion; step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
+}
+
 // ---------------------------------------------------------------- main
 
 async function main() {
@@ -859,6 +1248,7 @@ async function main() {
 
     await checkMatchParam(browser, base, currentTeams, expected);
     await checkInstall(browser, base, currentTeams[0].slug);
+    await checkLook(browser, base, currentTeams, expected);
 
     const offlineTeam = currentTeams.find((t) => expected.get(t.slug).latest);
     if (offlineTeam) await checkOffline(browser, base, offlineTeam.slug, expected.get(offlineTeam.slug).latest.commentIds);
@@ -873,7 +1263,8 @@ async function main() {
     process.exit(1);
   }
   console.log(`PASS check-p2: ${currentTeams.length} picker entries; ${currentTeams.length} team pages render (${withBriefing} briefings, ` +
-    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; Bookmark + Install web app shown only where they should be, with the right tip pop-ups; manifest and sw.js valid; ` +
+    `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; Bookmark + Install web app shown only where they should be, with the right tip pop-ups; ` +
+    `amber terminal fonts, colours and contrast right, and nothing too wide at ${LOOK_WIDTHS.join(', ')}px; manifest and sw.js valid; ` +
     `no secrets in ${files.length} frontend files; ` +
     (isLive ? 'live domain serves HTTPS and redirects http:// and www.' : `live-domain checks NOT run (base ${base})`));
 }

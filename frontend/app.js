@@ -199,7 +199,7 @@
   // when the browser has fired it, and otherwise opens a tip too. Neither shows on team pages or in
   // the installed app.
   //
-  // In tip text, {x} marks a symbol (⋮, ☆, ⌘), which goes in a .tip-sym span: the serif font hasn't
+  // In tip text, {x} marks a symbol (⋮, ☆, ⌘), which goes in a .tip-sym span: IBM Plex Mono hasn't
   // got them, so they're drawn larger in the system font.
   const DESKTOP_INSTALL_TIP = "Look for the install icon at the right of the address bar, or in your browser's menu. Not there? Chrome and Edge support it.";
   const TIPS = {
