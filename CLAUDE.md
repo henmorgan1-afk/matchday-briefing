@@ -11,6 +11,7 @@ Build reference: `SPEC.md`. These are working rules for Claude Code sessions in 
 ## Running commands
 
 - Run commands plainly. Don't wrap them in timers, `$(...)` subexpressions or `(Get-Date)` arithmetic, because those always trigger a permission prompt. If timing matters, have the script itself print how long it took.
+- Put throwaway scripts (measuring, screenshots, test servers) in scripts/, run them from there, and delete them when done, so they run without approval. Test servers listen on 127.0.0.1 only.
 
 ## Previewing lines for free
 

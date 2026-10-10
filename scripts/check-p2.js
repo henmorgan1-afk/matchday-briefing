@@ -830,7 +830,7 @@ async function checkInstall(browser, base, teamSlug) {
     `one row of single-line buttons (${sizes.join('; ')}); cards fit (${cards.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
-// ---------------------------------------------------------------- look (amber terminal, Revision 16)
+// ---------------------------------------------------------------- look (amber terminal, Revision 17)
 
 const LOOK_WIDTHS = [320, 360, 390];
 const OLD_FONTS = ['Oswald', 'Source Serif 4'];

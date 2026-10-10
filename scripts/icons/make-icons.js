@@ -1,5 +1,5 @@
 // Rebuilds the app icons in frontend/icons/ from icon-master.svg and favicon.svg (SPEC.md Revision 12,
-// artwork replaced in the amber terminal Revision 16).
+// artwork replaced in Revision 17, the amber terminal restyle).
 //
 // Usage: node scripts/icons/make-icons.js
 //

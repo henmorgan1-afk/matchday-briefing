@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. The "amber terminal" restyle and new app icons (Revision 16, 10 Oct 2026, a separate note from the line voice), which replace Revision 10's look and Revision 12's artwork, are on branch `terminal-restyle`, with `check-p2.js` passing locally. They are not merged. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. The "amber terminal" restyle and new app icons (Revision 17, 10 Oct 2026), which replace Revision 10's look and Revision 12's artwork, are merged to `main`, with `check-p2.js` passing locally. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
 
 ## How this document is used
 
@@ -229,9 +229,9 @@ Decisions made while building P2. They include four changes the project owner as
 1. **Thumbs stay on the page until P4.** §4 says a thumbs tap writes to `feedback`, but §7 puts thumbs writes in P4, and P2 was built without starting P4. Each card has thumbs up and down buttons that toggle a pressed state (`aria-pressed`) on the page only. There is no `feedback` write, no `deviceId` and no "You're offline — reaction not saved" toast yet. P4 adds all three to `app.js`.
 2. **P2 reads Supabase live.** §7 lists "wire frontend to live Supabase reads" under P3. But §4's picker and briefings, and `check-p2`, need live reads, so P2 does them. That leaves P3 with what `check-p3.js` asserts: identical comments across browsers, and pipeline idempotency. `check-p3.js` and `verify.js` are not built.
 3. **Palette and manifest.**
-   - *(Replaced by Revision 16 (10 Oct 2026, amber terminal restyle), which lists the current thirteen tokens, a dark palette with `--paper` `#0B0806`. The manifest colours and the `theme-color` meta tag are now `#0B0806`. The Revision 10 palette below is history.)*
+   - *(Replaced by Revision 17 (10 Oct 2026, amber terminal restyle), which lists the current thirteen tokens, a dark palette with `--paper` `#0B0806`. The manifest colours and the `theme-color` meta tag are now `#0B0806`. The Revision 10 palette below is history.)*
    - *(Updated in Revision 10.)* `style.css` defines six colour tokens, and no other colour appears in it: `--paper` `#F2EADB` (page), `--ink` `#1D1B17` (text, rules, the Copy button), `--accent` `#8A3A1C`, `--muted` `#5A5348` (labels, notes, footer), `--rule` `#CDBFA6` (hairlines) and `--card` `#F8F2E6` (the match card). The manifest's `theme_color` and `background_color`, and the `theme-color` meta tag, are all `--paper`, `#F2EADB`. *(It was `#1F5C39` and `#F4EFE3` in the P2 build, the two tokens every other colour was mixed from.)*
-   - There's no dark mode, because it would need a second palette that the manifest's colours wouldn't match. *(Since Revision 16 (amber terminal) the one palette is dark; there's still no light/dark switch.)*
+   - There's no dark mode, because it would need a second palette that the manifest's colours wouldn't match. *(Since Revision 17 (amber terminal) the one palette is dark; there's still no light/dark switch.)*
    - `id`, `start_url` and `scope` are `/`. The three icons in `frontend/icons/` are used unchanged, with the maskable one marked `purpose: maskable`.
    - Chrome reports no manifest or installability errors.
 4. **`config.js`** sets `self.MATCHDAY_CONFIG = { SUPABASE_URL, SUPABASE_ANON_KEY }`, copied once from `.env`. The key is the `sb_publishable_` key. No other `.env` value appears under `frontend/`.
@@ -522,7 +522,7 @@ Implementation notes for the third round:
 
 ### Revision 10 (7 Oct 2026, frontend restyle: design direction A, "Matchday programme")
 
-*(Look replaced by Revision 16 (10 Oct 2026, amber terminal restyle and icons): items 2, 3, 4 and 5's colours, fonts, rules and sizes no longer apply. The naming (item 1), the layout, every behaviour and the data read (item 6) carry over.)*
+*(Look replaced by Revision 17 (10 Oct 2026, amber terminal restyle and icons): items 2, 3, 4 and 5's colours, fonts, rules and sizes no longer apply. The naming (item 1), the layout, every behaviour and the data read (item 6) carry over.)*
 
 The project owner chose design direction A, a printed matchday programme look, and renamed what users see. The work is on branch `redesign-programme`. Only `frontend/` and this file change; the pipeline is untouched. Revision 8 item 3 and §4's "Installed look" line are updated to match. Where anything else in §4 or Revision 8 differs on looks, this note takes precedence. Every behaviour is unchanged: card order, the "Last match:" and "Match:" labels, the opposition link rule, Copy, thumbs, Recent, `?match=`, the service worker and the offline cache. Model text still goes in with `textContent`.
 
@@ -559,7 +559,7 @@ The project owner chose design direction A, a printed matchday programme look, a
 
 ### Revision 11 (7 Oct 2026, team tiles)
 
-*(Colours, corners and fonts replaced by Revision 16 (10 Oct 2026, amber terminal restyle): the four tile tokens have new values, tiles have square corners, and the name is 14px IBM Plex Mono, 12px below 360px. The grid, sizes, states, `touchstart` listener and focus outline carry over.)*
+*(Colours, corners and fonts replaced by Revision 17 (10 Oct 2026, amber terminal restyle): the four tile tokens have new values, tiles have square corners, and the name is 14px IBM Plex Mono, 12px below 360px. The grid, sizes, states, `touchstart` listener and focus outline carry over.)*
 
 The project owner found that the home page team list didn't look tappable on a phone. Each team in "Premier League teams" is now a filled tile. This is a look-only change on branch `team-tiles`; Recent, the team pages and the pipeline are unchanged.
 
@@ -585,7 +585,7 @@ The project owner found that the home page team list didn't look tappable on a p
 
 ### Revision 12 (7 Oct 2026, app icons)
 
-*(Artwork replaced by Revision 16 (10 Oct 2026, amber terminal restyle and icons): an amber speech bubble on a near-black square, with an amber ball and a VT323 "?". Items 1 and 2 no longer apply, and `make-icons.js` now embeds VT323 instead of Source Serif 4. The files, sizes, maskable 80% scale, opaque PNGs, links, cache and rebuild process carry over.)*
+*(Artwork replaced by Revision 17 (10 Oct 2026, amber terminal restyle and icons): an amber speech bubble on a near-black square, with an amber ball and a VT323 "?". Items 1 and 2 no longer apply, and `make-icons.js` now embeds VT323 instead of Source Serif 4. The files, sizes, maskable 80% scale, opaque PNGs, links, cache and rebuild process carry over.)*
 
 The project owner approved new app icons to replace the P2 dark green set, which Revision 10 left unmatched to the new palette. The work is on branch `app-icons`. Only the icons, the `<head>` icon links, `sw.js`'s precache list, `check-p2.js`'s manifest check and this file change.
 
@@ -661,7 +661,7 @@ The project owner asked for a one-tap install button on the home page. Before th
 
 ### Revision 14 (8 Oct 2026, Bookmark + Install web app)
 
-*(Button style replaced by Revision 16 (10 Oct 2026, amber terminal restyle): VT323 24px, square corners and a 1px border, shrinking below 360px wide so the labels still fit. Item 2's fonts, sizes and colours, and its "labels fit at 15px" note, no longer apply.)*
+*(Button style replaced by Revision 17 (10 Oct 2026, amber terminal restyle): VT323 24px, square corners and a 1px border, shrinking below 360px wide so the labels still fit. Item 2's fonts, sizes and colours, and its "labels fit at 15px" note, no longer apply.)*
 
 *(Partly superseded by Revision 15: the tips now open in a pop-up card (`#tip-dialog`) instead of the tip line, which is gone, and the two desktop Bookmark tips are shorter. The buttons, the reassurance line, device detection, the install prompt, where the area shows and the footer rule are unchanged.)*
 
@@ -742,7 +742,7 @@ The project owner replaced Revision 13's single install button with a pair: Book
 
 ### Revision 15 (8 Oct 2026, tip pop-up)
 
-*(Card style replaced by Revision 16 (10 Oct 2026, amber terminal restyle): item 6's colours, fonts, corners, shadow and backdrop no longer apply. The card's width, padding, layout, opening animation and every behaviour carry over.)*
+*(Card style replaced by Revision 17 (10 Oct 2026, amber terminal restyle): item 6's colours, fonts, corners, shadow and backdrop no longer apply. The card's width, padding, layout, opening animation and every behaviour carry over.)*
 
 The project owner found Revision 14's tip line easy to miss. Tapping a button a second time also changed nothing, so the button looked broken. Every tip now opens a pop-up card that can't be missed and reopens on every tap. The work is on branch `tip-dialog`. Only `frontend/index.html`, `app.js`, `style.css`, `check-p2.js` and this file change. Revision 14, §4, §6 and §9 are updated to match; where Revision 14 differs, this note takes precedence.
 
@@ -941,9 +941,7 @@ Implementation notes for the third round:
 - **The copy check now covers the new example.** The generation prompt quotes "just one save despite us shipping five", so a line that repeats it fails the gate as well as E10.
 - **`PROMPT_VERSION`** is now `2056887e`. It was `86c616ab` in the second round.
 
-### Revision 16 (10 Oct 2026, amber terminal restyle and icons)
-
-*(This is a separate note from Revision 16 (9 Oct 2026, line voice) above; the project owner numbered both 16. Here "Revision 16" means this one wherever it's about the look or the icons.)*
+### Revision 17 (10 Oct 2026, amber terminal restyle and icons)
 
 The project owner replaced Revision 10's printed programme look with an "amber terminal" look, and Revision 12's icon artwork to match. The work is on branch `terminal-restyle`. Only `frontend/` (`style.css`, `index.html`, `manifest.webmanifest`, `sw.js`, `fonts/`, `icons/`, one comment in `app.js`), `scripts/icons/`, `check-p2.js` and this file change; the pipeline is untouched. Revisions 8 (item 3), 10, 11, 12, 14 and 15, §4 and §9 are updated to match; where any of them differs on looks, this note takes precedence. Layout, behaviour, copy and every existing check are unchanged.
 
@@ -1692,7 +1690,7 @@ The frontend only ever shows comments with `superseded_at` null, so a line quoti
   - The card closes with "Got it", Escape, a tap on the backdrop or Android's back gesture, and reopens on every tap.
   - Neither shows on team pages or when the site is already running installed.
   - The footer's one-line iPhone help ("On iPhone: Share → Add to Home Screen") is hidden while the buttons show, and shows everywhere else.
-- **Installed look:** `display: standalone`, theme and background colours both `#0B0806` (the page colour, `--paper`, since Revision 16's amber terminal restyle), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
+- **Installed look:** `display: standalone`, theme and background colours both `#0B0806` (the page colour, `--paper`, since Revision 17's amber terminal restyle), app name "Ludicrous Display", short name "Ludicrous" (also the `apple-mobile-web-app-title`). The page heading is "Did you see that *ludicrous* display last night?" and the tab title is "Ludicrous Display", or "<team> · Ludicrous Display" on a team page (Revision 10). Icons are the app's own mark — no club crests or colours, same licensing rule as the picker.
 
 ## 5. Testers (P4)
 
@@ -1792,7 +1790,7 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
     - The unknown-team page shows the area. A team page doesn't, and the card never opens there. With an iPhone user agent, a team page shows the footer's iPhone line.
     - Running installed (`display-mode: standalone` or `navigator.standalone` stubbed) shows no area, and the card never opens.
     - At 320px, 360px and 390px wide, both buttons are single-line (under 56px tall) and sit side by side on one row. The card fits the viewport with at least 16px each side, and no text overflows it.
-  - **Look (Revision 16, amber terminal):**
+  - **Look (Revision 17, amber terminal):**
     - VT323 and IBM Plex Mono load from `fonts/`, and no Oswald or Source Serif 4 face is declared. The heading is VT323 and the body IBM Plex Mono. The manifest's `theme_color` and `background_color` and the `theme-color` meta tag equal `--paper`.
     - **Contrast:** every text/background pair the site uses, including hover, pressed, the tip card and the install buttons, is measured in the page and must still use the tokens its row names. It fails below 4.5:1, or 3:1 for text 24px and up (3:1 for the thumbs' icons). The page background counts as `--paper` under a scanline, its lightest. The table is printed, with pairs under 7:1 marked.
     - At 320px, 360px and 390px wide: no sideways scroll on the home page or a briefing page, "ludicrous" inside the column on one line, the cursor on the same line as "night?", and no tile name, team heading or score-box name broken inside a word or spilling out. Every team's heading is checked at 320px.

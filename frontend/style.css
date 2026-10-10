@@ -1,4 +1,4 @@
-/* Ludicrous Display (SPEC.md §4), in the "amber terminal" look (Revision 16, 10 Oct 2026). Every
+/* Ludicrous Display (SPEC.md §4), in the "amber terminal" look (Revision 17, 10 Oct 2026). Every
    colour is one of the tokens in :root, apart from these, written as rgba: the scanlines and the
    heading glow (--accent at 3.5% and 35%), the pressed tile shadow's fallback for browsers without
    color-mix (--paper at 60%), and the tip pop-up's glow (--accent at 15%) and backdrop (black at
