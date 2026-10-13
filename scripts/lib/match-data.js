@@ -58,7 +58,7 @@ function isUnder18(birthDate, kickoffAt) {
 
 // The players sent to the prompts (SPEC.md §3.5): everyone with an event other than an assist,
 // the perspective team's players first, then by name. Each keeps its fpl_id for the code gate;
-// buildMatchData drops it. Null when the match has no player data.
+// buildMatchData drops it and groups them by team (groupPlayers). Null when the match has no player data.
 // playerData is { events: [{ fpl_id, team_id, event, count }], players: Map(fpl_id -> players row) }.
 function listPlayers(match, perspectiveTeam, playerData) {
   if (!playerData) return null;
@@ -93,21 +93,38 @@ function listPlayers(match, perspectiveTeam, playerData) {
     });
 }
 
-// The perspective team's notable moments, as lists of player names (SPEC.md §3.5).
+// The perspective team's notable moments, as lists of player names (SPEC.md §3.5). Every key says
+// whose player it lists (Revision 19): "our_" for the perspective team's, "their_" for the opponent's.
 function buildHooks(players) {
   const ours = players.filter((p) => p.side === 'perspective');
   const theirs = players.filter((p) => p.side === 'opponent');
   const names = (list, test) => list.filter((p) => test(p.events)).map((p) => p.name);
   return {
-    brace: names(ours, (e) => e.goal === 2),
-    hat_trick: names(ours, (e) => e.goal >= 3),
-    own_goal_for_us: names(theirs, (e) => e.own_goal > 0),
-    own_goal_against_us: names(ours, (e) => e.own_goal > 0),
+    our_brace: names(ours, (e) => e.goal === 2),
+    our_hat_trick: names(ours, (e) => e.goal >= 3),
+    their_own_goal_for_us: names(theirs, (e) => e.own_goal > 0),
+    our_own_goal_against_us: names(ours, (e) => e.own_goal > 0),
     our_red_card: names(ours, (e) => e.red_card > 0),
     their_red_card: names(theirs, (e) => e.red_card > 0),
-    pen_missed: names(ours, (e) => e.pen_missed > 0),
-    pen_saved: names(ours, (e) => e.pen_saved > 0),
+    our_pen_missed: names(ours, (e) => e.pen_missed > 0),
+    our_pen_saved: names(ours, (e) => e.pen_saved > 0),
   };
+}
+
+// "players" as the prompts see it (Revision 19): grouped into our_players (the perspective team's) and
+// their_players (the opponent's), each entry also naming its team, so no player's side can be misread.
+// "side" stays, because the generation prompt describes it. fpl_id is dropped.
+function groupPlayers(players, perspectiveTeam, opponentTeam) {
+  const entry = (team) => ({ fpl_id, name, side, ...rest }) => ({ name, team: team.short_name, side, ...rest });
+  return {
+    our_players: players.filter((p) => p.side === 'perspective').map(entry(perspectiveTeam)),
+    their_players: players.filter((p) => p.side === 'opponent').map(entry(opponentTeam)),
+  };
+}
+
+// Every player in a match data's "players", ours then theirs, or [] when it's null.
+function playersIn(matchData) {
+  return matchData.players ? [...matchData.players.our_players, ...matchData.players.their_players] : [];
 }
 
 // playerData is null unless the match's player_data is 'ok'; then players and hooks are null too.
@@ -150,7 +167,7 @@ function buildMatchData(match, perspectiveTeam, opponentTeam, playerData = null)
     winning_margin: Math.abs(ours - theirs),
     half_time_state: halfTimeState,
     half_time_comeback: hasHalfTime ? halfTimeState === 'trailing' && result !== 'lost' : null,
-    players: players && players.map(({ fpl_id, ...rest }) => rest),
+    players: players && groupPlayers(players, perspectiveTeam, opponentTeam),
     hooks: players && buildHooks(players),
   };
 }
@@ -197,6 +214,7 @@ module.exports = {
   PROMPT_VERSION,
   buildMatchData,
   listPlayers,
+  playersIn,
   fullName,
   isUnder18,
   matchDataJson,

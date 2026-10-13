@@ -3,7 +3,7 @@
 // use this file. No model calls; the only I/O is reading the generation prompt once, for the copy check.
 // normaliseDashes (Revision 16) isn't a check: generate-comments.js applies it to every line first.
 
-const { GENERATION_PROMPT_FILE, loadPrompt } = require('./match-data');
+const { GENERATION_PROMPT_FILE, loadPrompt, playersIn } = require('./match-data');
 
 // Numbers are detected as digits and as these words, hyphenated forms included ("three-one" is read
 // as three and one).
@@ -94,10 +94,11 @@ function buildNameIndex(players) {
 }
 
 // Every FPL player name in a line, as whole words, case-sensitively, ignoring accents:
-// [{ name, fplIds }], where fplIds are all the players with that name.
+// [{ name, fplIds, index }], where fplIds are all the players with that name and index is where the
+// name starts in the accent-folded text.
 function namesIn(text, nameIndex) {
   if (!nameIndex.pattern) return [];
-  return [...foldName(text).matchAll(nameIndex.pattern)].map((m) => ({ name: m[0], fplIds: nameIndex.owners.get(m[0]) }));
+  return [...foldName(text).matchAll(nameIndex.pattern)].map((m) => ({ name: m[0], fplIds: nameIndex.owners.get(m[0]), index: m.index }));
 }
 
 // The name context for one perspective: the run's name index, plus that perspective's players
@@ -124,6 +125,24 @@ function nameProblems({ type, text }, names) {
     } else if (here[0].under_18 && type !== 'STAT') {
       problems.push(`${type} line names ${JSON.stringify(name)}, who was under 18 on match day; only STAT may`);
     }
+  }
+  return problems;
+}
+
+// ---------------------------------------------------------------- team mix-ups (Revision 19)
+
+// "our" straight before an opposition player's name ("our Martinez") claims their player for us, in a
+// line or its note. Only that exact pairing is checked. An opposition player named near "we", "us" or
+// "our" is usually right ("Martinez kept us out", "Henderson's brace sank us", "too good for us"), and
+// telling those apart from a mix-up takes reading the meaning, which the model checker does.
+function teamMixUps(text, names) {
+  const inMatch = new Map((names.matchPlayers ?? []).map((p) => [p.fpl_id, p]));
+  const folded = foldName(text);
+  const problems = [];
+  for (const { name, fplIds, index } of namesIn(text, names.nameIndex)) {
+    const here = fplIds.filter((id) => inMatch.has(id)).map((id) => inMatch.get(id));
+    if (here.length !== 1 || here[0].side !== 'opponent') continue;
+    if (/(?<![\p{L}\p{N}])our\s+$/iu.test(folded.slice(0, index))) problems.push(`says "our ${name}", but ${name} plays for the opposition`);
   }
   return problems;
 }
@@ -273,7 +292,7 @@ function allowedNumbers(matchData) {
     add(half.perspective);
     add(half.opponent);
   }
-  for (const p of matchData.players ?? []) {
+  for (const p of playersIn(matchData)) {
     add(p.events.goal);
     add(p.events.saves);
   }
@@ -282,9 +301,10 @@ function allowedNumbers(matchData) {
 
 // Everything wrong with one line under the deterministic rules; an empty list means it passes.
 // STAT and HOT_TAKE numbers must be in the perspective's allowed set, BANTER may hold no number at all,
-// no type may contain a banned term, every player name must pass the name rules, no line may repeat
-// five words in a row from the generation prompt, and no note may say "data". `names` comes from
-// nameContext; it's required, so the name rules can't be skipped by leaving it out.
+// no type may contain a banned term, every player name must pass the name rules, neither the line nor
+// its note may say "our" before an opposition player's name, no line may repeat five words in a row
+// from the generation prompt, and no note may say "data". `names` comes from nameContext; it's
+// required, so the name rules can't be skipped by leaving it out.
 function codeGateProblems({ type, text, note }, matchData, names) {
   if (!names?.nameIndex) throw new Error('codeGateProblems needs a name context (nameContext) for the name rules');
   const problems = [];
@@ -295,6 +315,7 @@ function codeGateProblems({ type, text, note }, matchData, names) {
   }
   for (const term of bannedTermsIn(text)) problems.push(`contains banned term ${JSON.stringify(term)}`);
   problems.push(...nameProblems({ type, text }, names));
+  problems.push(...teamMixUps(text, names), ...teamMixUps(note ?? '', names).map((p) => `note ${p}`));
   for (const stretch of copiedFromPrompt(text)) {
     problems.push(`repeats ${wordsOf(stretch).length} words in a row from the generation prompt, ${JSON.stringify(stretch)}`);
   }
@@ -312,6 +333,7 @@ module.exports = {
   buildNameIndex,
   namesIn,
   nameContext,
+  teamMixUps,
   REUSABLE_PHRASES,
   buildPromptRuns,
   copiedFromPrompt,
