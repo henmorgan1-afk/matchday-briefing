@@ -1,6 +1,6 @@
 # Matchday Briefing — Prototype Spec (P0–P5)
 
-Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. The "amber terminal" restyle and new app icons (Revision 17, 10 Oct 2026), which replace Revision 10's look and Revision 12's artwork, are merged to `main`, with `check-p2.js` passing locally. Revision 18 (13 Oct 2026, free AI) moves generation and safety checks from the paid Anthropic API to Cloudflare Workers AI's free daily allowance, so the pipeline costs £0. It's on branch `free-to-run`, not merged, and its line quality is still to be confirmed by dry runs. This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
+Status: P0 built and passing `check-p0.js` (4 Oct 2026). P1 built, with its prompts tightened in three review rounds (Revisions 5–7), and on `main`, where the hourly job has generated briefings for all four finished matchday-5 matches. Under Revision 7, `check-p1.js` passes on all four. P2 built on branch `p2-frontend` (5 Oct 2026, Revision 8). `check-p2.js`'s browser checks pass against a local server. Not yet merged or deployed, so the live-domain checks haven't run. P3–P5 not started. FPL player data (Revision 9, 6 Oct 2026) is built and merged to `main`, after three prompt rounds of dry runs on 560590 and 560583. Its live test is matchday 6 (10–12 Oct). The frontend restyle and rename to "Ludicrous Display" (Revision 10, 7 Oct 2026) is on branch `redesign-programme`, with `check-p2.js` passing locally. It is not merged. A new voice for the generated lines (Revision 16, 9 Oct 2026), revised over three rounds and tested with two paid dry runs on 560590, is merged to `main`. The "amber terminal" restyle and new app icons (Revision 17, 10 Oct 2026), which replace Revision 10's look and Revision 12's artwork, are merged to `main`, with `check-p2.js` passing locally. Revision 18 (13 Oct 2026, free AI) moves generation and safety checks from the paid Anthropic API to Cloudflare Workers AI's free daily allowance, so the pipeline costs £0. It's on branch `free-to-run`, not merged, and its line quality is still to be confirmed by dry runs. Revision 19 (13 Oct 2026, free AI round 2), on the same branch, groups the match data's players by team, checks each side's lines in one call with the larger model, and adds a code-gate rule against "our <their player>". This document is the build reference for the prototype described in `docs/matchday-briefing-design-doc.md` §10, revised per the interview recorded below, revised again on 22 Sep 2026 after a pre-build review (see "Revision 2" in §0), again on 4–5 Oct 2026 during the P0, P1 and P2 builds (see Revisions 3–8 in §0), and again on 6 Oct 2026 to add player data from the Fantasy Premier League feed (see Revision 9 in §0).
 
 ## How this document is used
 
@@ -990,7 +990,7 @@ The project owner asked for the pipeline to be free to run. Generation and safet
 
 1. **Client.** `scripts/lib/ai-client.js` replaces `claude-client.js` and keeps its contract: `complete(prompt, { model })` returns `{ text, stopReason, usage }`, and `parseJsonReply()` is unchanged. Each call is one POST to an OpenAI-compatible chat-completions endpoint, made with Node's built-in `fetch`: a single user message holding the filled template, no system prompt, and `max_tokens` 16000, which includes the model's reasoning. Workers AI's default is 256, which the reasoning alone would use up. No temperature, reasoning effort or JSON mode is sent, so each model's defaults apply (reasoning effort medium). The Anthropic SDK is removed from `package.json`, and no package was added.
 2. **Providers,** chosen by `AI_PROVIDER`, which defaults to `cloudflare`:
-   - `cloudflare`: `https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`, with `CLOUDFLARE_API_TOKEN` as a Bearer token (made from Cloudflare's "Workers AI" token template). Generation uses `@cf/openai/gpt-oss-120b` and safety checks `@cf/openai/gpt-oss-20b`. Checks run 4 at a time.
+   - `cloudflare`: `https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`, with `CLOUDFLARE_API_TOKEN` as a Bearer token (made from Cloudflare's "Workers AI" token template). Generation uses `@cf/openai/gpt-oss-120b` and safety checks `@cf/openai/gpt-oss-20b`. Checks run 4 at a time. *(Superseded by Revision 19: safety checks use `@cf/openai/gpt-oss-120b` too, with one call per side.)*
    - `ollama`, for running on the project owner's PC later: `http://localhost:11434/v1/chat/completions`, no key, `gpt-oss:20b` for both. Checks run 1 at a time. It hasn't been tried yet. Ollama's context length (`OLLAMA_CONTEXT_LENGTH`) must hold the prompt plus up to 16,000 tokens of reply, and a call that takes over 5 minutes times out.
    - Model IDs are constants in `ai-client.js` with no env override, as Revision 4 requires. Any other `AI_PROVIDER` value stops the run with an error. `MECHANICAL_MODEL` is gone: nothing used it.
 3. **Replies.**
@@ -1015,6 +1015,51 @@ The project owner asked for the pipeline to be free to run. Generation and safet
 **Matches per day (estimate).** The last Sonnet dry run of 560590 (Revision 16) used about 7.3k input tokens across its 2 generation calls and 48.8k across its 16 checks. If gpt-oss reads about as many and writes more because of its reasoning (say 3,000 output tokens per generation call and 800 per check), a match costs about 640 neurons for generation and 1,240 for checks: about 1,900 in all. That's about 5 matches a day. A 10-match round would take about 2 days, so some briefings will arrive the day after the match. A second attempt adds about 950 for that side. The first real dry run's neuron line replaces this estimate.
 
 **Before going live.** Line quality on gpt-oss is unknown, and the prompts were tuned on Claude. The hourly job writes whatever passes, so merging this branch is going live. Before merging, dry-run at least one recent finished match with `player_data` `ok` (`node scripts/run-pipeline.js --match <id> --dry-run`), read `review/dryrun-<id>.json` line by line, and run `check-p1.js --match <id>`. If the lines aren't good enough, don't merge.
+
+### Revision 19 (13 Oct 2026, free AI, round 2)
+
+Round 1's dry run of 560595 (Chelsea 5-1 Bournemouth) passed 15 of 16 lines, but Bournemouth's "Martinez's three saves kept the score respectable" credited Chelsea's goalkeeper to Bournemouth, and its checker was the smaller model. The project owner asked for better line quality on the free models, still inside the free daily allowance. The work is on branch `free-to-run`, after merging `main` (the §3.6 score-reset fix) into it. `match-data.js`, `code-gate.js`, `ai-client.js`, `safety-check.js`, `run-pipeline.js`, `check-p1.js`, `prompts/safety-checker-prompt.md` and this file change. The generation prompt is unchanged. The checker prompt changes only in its framing; every rule's wording is as it was. Where this note differs from Revision 18, §1, §3.1, §3.5 or §9, it takes precedence.
+
+1. **Whose player is whose.** Round 1's match data already listed Martinez with `"side": "opponent"`, and the model misread it. Now:
+   - `players` is grouped into `our_players` and `their_players`, and every entry also names its team (`"team": "Chelsea"`). `side` stays, because the generation prompt describes it (§3.5).
+   - Every hooks key says whose players it lists. `brace`, `hat_trick`, `pen_missed` and `pen_saved` become `our_brace`, `our_hat_trick`, `our_pen_missed` and `our_pen_saved`. `own_goal_for_us` and `own_goal_against_us` become `their_own_goal_for_us` and `our_own_goal_against_us`. `our_red_card` and `their_red_card` are unchanged.
+   - Nothing else in the match data changes.
+2. **Code gate: "our <their player>".** A line or note that says "our" straight before an opposition player's name fails ("our Martinez"). The broader rule asked for, failing an opposition player named with "we", "us" or "our" about that player's event, can't be made reliable as a pattern. Right lines pair them all the time ("Martinez kept us out", "Henderson's brace sank us", "too good for us"), and telling those apart takes reading the meaning, which is the checker's job (E7). The narrow rule wouldn't have caught round 1's line, which had no "our".
+3. **A stronger checker, one call per side.** Safety checks use `@cf/openai/gpt-oss-120b`, like generation. A side's well-formed lines go to the checker in one call, as JSON keyed by number (`{{comments_json}}`), and it returns each line's per-rule verdicts keyed by the same number.
+   - **Fails closed, line by line.** A refusal or an unparseable reply fails every line. A line whose verdict is missing or unreadable fails. Verdicts are never read by position, so one skipped verdict can't shift the others onto the wrong lines. A line with no readable verdict is logged (`checker: no readable verdict for line 3 ...`), and the dry run keeps the raw reply.
+   - The check-concurrency setting is gone: a run makes 2 check calls per match, not up to 16.
+   - The dry run records each side's check call (`stop_reason`, usage, any problem). The per-line `check_output_tokens` is gone.
+4. **`PROMPT_VERSION`** is now `eda3b201` (it was `e92a5e13`), because the checker prompt and the check model changed.
+5. **Tested offline** with a throwaway script, since deleted, using fake model replies and a fake Supabase:
+   - a missing verdict fails only that line;
+   - a reply that isn't JSON, a refusal, a cut-off reply and an empty reply fail every line;
+   - unreadable verdicts (a bare "pass", null, an odd result, an overall "pass" with a failed rule) fail;
+   - in a normal run, an unreadable check writes nothing, and the attempt still counts;
+   - the grouped players and renamed hooks reach the model;
+   - the gate drops "our Martinez" in a line or a note, and passes "Martinez kept us out".
+
+**Dry runs** (13 Oct 2026, `PROMPT_VERSION` `eda3b201`, compared with round 1):
+
+| | Round 1, 560595 (Revision 18) | Round 2, 560595 | Round 2, 560598 |
+|---|---|---|---|
+| Passed | Chelsea 8/8, Bournemouth 7/8 | Chelsea 8/8, Bournemouth 7/8 | Liverpool 6/8, Man City 6/8 |
+| Calls | 2 generation, 16 checks | 2 generation, 2 checks | 2 generation, 2 checks |
+| Tokens | 43,798 in, 18,248 out | 11,544 in, 14,033 out | 11,521 in, 14,386 out |
+| Estimated neurons | 1,584 | 1,324 | 1,348 |
+| Matches a day | about 6 | about 7 | about 7 |
+
+- Each call reads about 2.9k tokens. A generation call writes 2.5–3.5k, and a check call 3.7–4.7k, so a check call costs about 345–415 neurons.
+- **560595 compared with round 1.**
+  - No line on either side names Martinez, so the mix-up was avoided rather than caught.
+  - Chelsea's "Chelsea fans always belt out..." line from Chelsea's own side and Bournemouth's "No clean sheet" STAT are gone.
+  - The checker failed one line ("Blue bloods", B6).
+- **560598.** The checker failed three BANTER lines: two naming Anfield (E4), and "City fans think they own the league" (E3). The code gate dropped Man City's "Worst first half I've seen from us all season.", copied from the prompt.
+- **Still wrong in lines that passed:**
+  - "the Blues finally buzzing" (560595, Chelsea): "finally" implies other matches, which E3 fails ("finally clicking").
+  - "Six saves by City keeper" and its note (560598, Liverpool): a player's position (E9), which the prompt also bans in notes.
+  - "Chelsea fans love their fancy suits" (560595, Bournemouth): arguably mocks money (B7), and its note claims a nickname the line doesn't use.
+  - Voice: tails after a comma ("no contest", "rain or shine"), "proper travelling support" (one of the tails the prompt names), and stiff STATs ("Points three."). No checker rule covers voice.
+  - Most notes are labels ("General banter, no match specifics.") rather than help for someone who doesn't follow football.
 
 ## 1. Architecture
 
@@ -1105,7 +1150,7 @@ matchday-briefing/
   - `SUPABASE_URL` and `SUPABASE_ANON_KEY` are public by design: the anon key can only do what the RLS policies in §2 allow. They are committed in `frontend/config.js` and also set in `.env` for the pipeline and check scripts.
   - `AI_PROVIDER` is a plain setting, not a secret: `cloudflare` (the default) or `ollama` (Revision 18). `pipeline.yml` sets it in the workflow file.
   - `check-p2.js` (§9) fails if any secret value appears in the deployed frontend.
-- **Models (Revision 18):** `ai-client.js` sets the models per `AI_PROVIDER`, as constants with no env override. On `cloudflare`, `GENERATION_MODEL` is `@cf/openai/gpt-oss-120b` (for `generate-comments.js`) and `CHECK_MODEL` is `@cf/openai/gpt-oss-20b` (for `safety-check.js`), both inside Workers AI's free daily allowance of 10,000 neurons. On `ollama`, both are `gpt-oss:20b`. There's no separate model for mechanical steps: `fetch-matches.js` needs none.
+- **Models (Revision 18):** `ai-client.js` sets the models per `AI_PROVIDER`, as constants with no env override. On `cloudflare`, `GENERATION_MODEL` (for `generate-comments.js`) and, since Revision 19, `CHECK_MODEL` (for `safety-check.js`) are both `@cf/openai/gpt-oss-120b`, inside Workers AI's free daily allowance of 10,000 neurons. On `ollama`, both are `gpt-oss:20b`. There's no separate model for mechanical steps: `fetch-matches.js` needs none.
 
 ## 2. Data shapes (`supabase/schema.sql`)
 
@@ -1286,7 +1331,7 @@ Constants (in `scripts/lib/constants.js`): `MIN_PASSING_COUNT = 4`, `MAX_COMMENT
    - **generation gate (Revision 9):** the match's `player_data` is `ok`, `mismatch` or `unavailable`. A `pending` match waits for FPL (§2.3) and isn't attempted. With `ok`, the match data includes `players` and `hooks`. With `mismatch` or `unavailable`, they're null, and the lines are team-level, as before Revision 9.
 3. For each eligible perspective, increment its attempt counter, then call generation once. The counter counts any attempt where the model returned a response, including an unparseable one (which yields zero candidates). If any model call in the attempt fails outright (generation or a safety check: network error, rate limit, outage), write nothing for that attempt, undo the increment, log the error, move on, and make the run exit non-zero so the failure shows red in the Actions tab. The perspective is retried on the next hourly run.
    - **Revision 18 exceptions.** If Cloudflare says the free daily AI allowance is used up, the increment is undone in the same way, but the run then makes no more model calls, logs one plain line, and exits 0. The perspectives left wait for a later run. Separately, no new match is started after 40 minutes of run time.
-4. Each candidate goes through `safety-check.js`. Every candidate the model checker passes then goes through the **code gate** (`scripts/lib/code-gate.js`): the deterministic number rules, banned terms, name rules, prompt-copy check and note words listed under `check-p1.js` in §9. `check-p1.js` uses the same code. A line the gate fails is dropped and logged exactly like a checker fail. Once every candidate in the attempt has been checked, each passing candidate is written to `comments` with the current `PROMPT_VERSION`, unless:
+4. Each candidate goes through `safety-check.js`. Since Revision 19 that's one call for all of a side's well-formed candidates, numbered, with a separate verdict for each; a line whose verdict is missing or unreadable fails. Every candidate the model checker passes then goes through the **code gate** (`scripts/lib/code-gate.js`): the deterministic number rules, banned terms, name rules, prompt-copy check and note words listed under `check-p1.js` in §9. `check-p1.js` uses the same code. A line the gate fails is dropped and logged exactly like a checker fail. Once every candidate in the attempt has been checked, each passing candidate is written to `comments` with the current `PROMPT_VERSION`, unless:
    - its text matches an existing live comment for that perspective (case-insensitive, whitespace-trimmed), in which case it's dropped as a duplicate, or
    - **variety (Revision 9):** its first three words (lower-cased, punctuation ignored) match a line already written for either side of the match, whether a live comment or a line written earlier in the run, or
    - the perspective already has `MAX_COMMENTS_PER_PERSPECTIVE` live comments.
@@ -1501,15 +1546,16 @@ Return JSON: a list of 8 objects, each { "type", "text", "note" }.
 **`prompts/safety-checker-prompt.md`**:
 
 ```
-You are checking one football comment against a match's real data before it
-ships to a user. Reject anything that could embarrass the user if challenged,
-using the rules for its declared type.
+You are checking a numbered list of football comments against a match's real
+data before they ship to a user. Check each comment on its own. Reject
+anything that could embarrass the user if challenged, using the rules for its
+declared type.
 
 Match data:
 {{match_data_json}}
 
-Comment to check:
-{{comment_json}}
+Comments to check, keyed by number:
+{{comments_json}}
 
 The match data above is everything that is known about this match. When
 "players" isn't null, it lists every player who scored, scored an own
@@ -1609,13 +1655,15 @@ Rules by type — check only the rules for the comment's declared type:
     accent, money, or any tragedy or disaster. Friendly digs at a club,
     its fans, its songs or its nickname pass.
 
-Go through E1 to E10, then each rule for the comment's declared type, in
-order. Give each rule "pass" or "fail"; add a short reason only for a rule
-that fails, as "fail: <short reason>". The overall result is "fail" if any
-rule failed, otherwise "pass".
+For each comment in turn, go through E1 to E10, then each rule for that
+comment's declared type, in order. Give each rule "pass" or "fail"; add a
+short reason only for a rule that fails, as "fail: <short reason>". A
+comment's overall result is "fail" if any of its rules failed, otherwise
+"pass".
 
-Return only this JSON, with one entry per rule you checked:
-{"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
+Return only this JSON, with one entry per comment, keyed by its number, and
+in each one entry per rule you checked:
+{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}, "2": {...}, ...}
 ```
 
 ### 3.5 Match data sent to the model (`scripts/lib/match-data.js`)
@@ -1641,24 +1689,28 @@ Return only this JSON, with one entry per rule you checked:
   "winning_margin": 2,
   "half_time_state": "trailing",
   "half_time_comeback": false,
-  "players": [
-    { "name": "Brobbey", "side": "perspective", "events": { "goal": 3 }, "under_18": false },
-    { "name": "Roefs", "side": "perspective", "events": { "saves": 1 }, "under_18": false },
-    { "name": "Cherki", "side": "opponent", "events": { "goal": 1 }, "under_18": false },
-    { "name": "Donnarumma", "side": "opponent", "events": { "saves": 4 }, "under_18": false },
-    { "name": "Enzo", "side": "opponent", "events": { "goal": 1 }, "under_18": false },
-    { "name": "Haaland", "side": "opponent", "events": { "goal": 1 }, "under_18": false },
-    { "name": "Semenyo", "side": "opponent", "events": { "goal": 2 }, "under_18": false }
-  ],
+  "players": {
+    "our_players": [
+      { "name": "Brobbey", "team": "Sunderland", "side": "perspective", "events": { "goal": 3 }, "under_18": false },
+      { "name": "Roefs", "team": "Sunderland", "side": "perspective", "events": { "saves": 1 }, "under_18": false }
+    ],
+    "their_players": [
+      { "name": "Cherki", "team": "Man City", "side": "opponent", "events": { "goal": 1 }, "under_18": false },
+      { "name": "Donnarumma", "team": "Man City", "side": "opponent", "events": { "saves": 4 }, "under_18": false },
+      { "name": "Enzo", "team": "Man City", "side": "opponent", "events": { "goal": 1 }, "under_18": false },
+      { "name": "Haaland", "team": "Man City", "side": "opponent", "events": { "goal": 1 }, "under_18": false },
+      { "name": "Semenyo", "team": "Man City", "side": "opponent", "events": { "goal": 2 }, "under_18": false }
+    ]
+  },
   "hooks": {
-    "brace": [],
-    "hat_trick": ["Brobbey"],
-    "own_goal_for_us": [],
-    "own_goal_against_us": [],
+    "our_brace": [],
+    "our_hat_trick": ["Brobbey"],
+    "their_own_goal_for_us": [],
+    "our_own_goal_against_us": [],
     "our_red_card": [],
     "their_red_card": [],
-    "pen_missed": [],
-    "pen_saved": []
+    "our_pen_missed": [],
+    "our_pen_saved": []
   }
 }
 ```
@@ -1668,28 +1720,28 @@ Return only this JSON, with one entry per rule you checked:
 - `result` is `won`, `drew` or `lost`; `points_earned` is 3, 1 or 0; `winning_margin` is the absolute goal difference (0 for a draw).
 - `half_time`, `half_time_state` (`leading`, `level` or `trailing`) and `half_time_comeback` (trailed at half time and didn't lose) are `null` when the half-time score isn't stored. `matchday` is `null` when the API didn't provide it.
 - **`first_half_goals` and `second_half_goals`** (Revision 9) are each side's goals in each half. They're worked out from the half-time and full-time scores, so `first_half_goals` repeats `half_time`. Both are `null` when the half-time score isn't stored. They let a claim about either half be checked (E5): Sunderland scored 2 before the break and 1 after it.
-- **`players`** (Revision 9) lists every player with at least one event other than an assist, ordered with the perspective team's players first, then by name.
-  - `side` is `perspective` or `opponent`, taken from the event's `team_id`, which comes from the fixture side, never the player's current team.
+- **`players`** (Revision 9) lists every player with at least one event other than an assist. Since Revision 19 it's grouped into `our_players` (the perspective team's) and `their_players` (the opponent's), each ordered by name, and every entry also names its team (`team`, the team's `short_name`), so no player's side can be misread.
+  - `side` is `perspective` or `opponent`, taken from the event's `team_id`, which comes from the fixture side, never the player's current team. It stays alongside the grouping because the generation prompt describes it.
   - `events` holds that player's non-zero counts of `goal`, `own_goal`, `red_card`, `pen_missed`, `pen_saved` and `saves`. Assists are never included.
   - `under_18` is true when the player was under 18 on the kickoff date (Europe/London), or has no `birth_date`.
 - **`name`** is the player's `web_name`. When two players in `players` share a `web_name`, both are given their full names instead: `known_name` when FPL has one, otherwise `first_name` and `second_name`.
-- **`hooks`** are worked out from `players`, from the perspective team's point of view. Each is a list of the names it applies to, empty when it doesn't:
+- **`hooks`** are worked out from `players`, from the perspective team's point of view. Each is a list of the names it applies to, empty when it doesn't. Since Revision 19 every key starts with `our_` or `their_`, saying whose players it lists:
 
   | Hook | Players listed |
   |---|---|
-  | `brace` | our players with exactly 2 goals |
-  | `hat_trick` | our players with 3 or more goals |
-  | `own_goal_for_us` | their players who scored an own goal |
-  | `own_goal_against_us` | our players who scored an own goal |
+  | `our_brace` | our players with exactly 2 goals |
+  | `our_hat_trick` | our players with 3 or more goals |
+  | `their_own_goal_for_us` | their players who scored an own goal |
+  | `our_own_goal_against_us` | our players who scored an own goal |
   | `our_red_card` | our players sent off |
   | `their_red_card` | their players sent off |
-  | `pen_missed` | our players who missed a penalty |
-  | `pen_saved` | our players who saved a penalty |
+  | `our_pen_missed` | our players who missed a penalty |
+  | `our_pen_saved` | our players who saved a penalty |
 - `players` and `hooks` are both `null` when `player_data` isn't `ok`. Lines are then team-level, as before Revision 9.
 - **Allowed numbers.** Each half's goals and each listed player's goal and save counts join the numbers a `STAT` or `HOT_TAKE` line may use (§9).
 - **Deliberately excluded:** league position, the table, form and season records. They change after later matches, so a cached line quoting them would go stale. Also excluded: assists, yellow cards, FPL's bonus, `bps` and `defensive_contribution`, and players with no event (Revision 9).
 
-`PROMPT_VERSION` is also computed here: the first 8 characters of a SHA-256 hash of `prompts/generation-prompt.md`, `prompts/safety-checker-prompt.md` and `TARGET_MIX` together. It changes automatically whenever a prompt or the mix is edited, so there's nothing to remember to bump. Every written comment records it.
+`PROMPT_VERSION` is also computed here: the first 8 characters of a SHA-256 hash of `prompts/generation-prompt.md`, `prompts/safety-checker-prompt.md` and `TARGET_MIX` together, and since Revision 18 the AI provider and both model IDs. It changes automatically whenever a prompt, the mix, the provider or a model is changed, so there's nothing to remember to bump. Every written comment records it. A change to the match data's shape alone (such as Revision 19's grouped `players`) doesn't change it.
 
 ### 3.6 Score corrections
 
@@ -1819,6 +1871,7 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
     - A name shared by two such players appears only as part of a full name.
     - An under-18 player is named only in a `STAT` line, and no `BANTER` line names a player.
     - For a match without player data, any FPL player name fails.
+    - **Team mix-ups (Revision 19):** no passing line or its note says "our" straight before an opposition player's name ("our Martinez").
     - The check prints the match's `player_data` and every player named in a passing line. Stage 1 runs it on a match whose `player_data` is `ok`.
   - **prompt copying and notes (Revision 9):** no passing line's text repeats five or more words in a row from the generation prompt, apart from its three long reusable idioms (§3.3), and no passing line's note says "match data", "data", "player list" or "players". **Variety:** no two passing lines, across both perspectives, open with the same three words.
   - The number check, banned terms, name rules, copy check and note words are the pipeline's own code gate (`scripts/lib/code-gate.js`, §3.1 step 4). `check-p1.js` re-applies them to the stored match and its stored events, so a line that slipped past the gate still fails the check. It also prints every line the gate dropped, since each one is a line the model checker passed.
