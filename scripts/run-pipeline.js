@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { getServiceClient, unwrap, readAll } = require('./lib/supabase-client');
 const {
-  PROVIDER, GENERATION_MODEL, CHECK_MODEL, CHECK_CONCURRENCY, AI_DESCRIPTION, isAllowanceUsedUp, neuronSummary,
+  PROVIDER, GENERATION_MODEL, CHECK_MODEL, AI_DESCRIPTION, isAllowanceUsedUp, neuronSummary,
 } = require('./lib/ai-client');
 const { PROMPT_VERSION, buildMatchData, londonIsoDate } = require('./lib/match-data');
 const { codeGateProblems, openingWords } = require('./lib/code-gate');
@@ -68,50 +68,24 @@ function addUsage(stats, usage) {
 
 // ---------------------------------------------------------------- model work
 
-// Runs fn over items, at most `limit` at a time, and never rejects. After the first outright
-// failure no new call starts (the attempt is void anyway); calls already in flight finish.
-async function settleWithLimit(items, limit, fn) {
-  const results = items.map(() => ({ status: 'skipped' }));
-  let next = 0;
-  let failed = false;
-  async function worker() {
-    while (!failed && next < items.length) {
-      const i = next++;
-      try {
-        results[i] = { status: 'fulfilled', value: await fn(items[i]) };
-      } catch (reason) {
-        results[i] = { status: 'rejected', reason };
-        failed = true;
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
-// One generation call, then a safety check per well-formed candidate, then the code gate on every line
-// the checker passed. `names` is the perspective's name context for the gate's name rules. Returns
-// every candidate with its verdict. Throws if any model call failed outright, after counting the ones
-// that returned.
+// One generation call, then one safety-check call for all of its well-formed candidates (Revision 19),
+// then the code gate on every line the checker passed. `names` is the perspective's name context for
+// the gate's name rules. Returns every candidate with its verdict. Throws if a model call failed
+// outright, after counting the one that returned.
 async function runAttempt(matchData, names, stats, deps) {
   const gen = await deps.generateComments(matchData);
   stats.generationCalls += 1;
   addUsage(stats, gen.usage);
 
   const toCheck = gen.candidates.filter((c) => !c.rejected);
-  const settled = await settleWithLimit(toCheck, CHECK_CONCURRENCY, (c) => deps.safetyCheck(matchData, c));
   const verdicts = new Map();
-  let failure = null;
-  settled.forEach((s, i) => {
-    if (s.status === 'fulfilled') {
-      stats.safetyCheckCalls += 1;
-      addUsage(stats, s.value.usage);
-      verdicts.set(toCheck[i], s.value);
-    } else if (s.status === 'rejected' && !failure) {
-      failure = s.reason;
-    }
-  });
-  if (failure) throw failure;
+  let check = null;
+  if (toCheck.length) {
+    check = await deps.safetyCheck(matchData, toCheck);
+    stats.safetyCheckCalls += 1;
+    addUsage(stats, check.usage);
+    toCheck.forEach((c, i) => verdicts.set(c, check.verdicts[i]));
+  }
 
   const candidates = gen.candidates.map((c) => {
     const verdict = verdicts.get(c);
@@ -122,9 +96,8 @@ async function runAttempt(matchData, names, stats, deps) {
       result: verdict ? verdict.result : 'fail',
       reason: verdict ? verdict.reason : c.rejected,
       failed_by: verdict ? (verdict.result === 'pass' ? undefined : 'checker') : 'format',
-      // For review only; never stored: the checker's per-rule verdicts and the size of its reply.
+      // For review only; never stored: the checker's per-rule verdicts.
       rule_checks: verdict?.rules,
-      check_output_tokens: verdict?.usage.output_tokens,
     };
     // SPEC.md §3.1 step 4 (Revision 7): the code gate runs after the model check, and a line it
     // fails is dropped exactly like a checker fail.
@@ -137,6 +110,7 @@ async function runAttempt(matchData, names, stats, deps) {
   return {
     candidates,
     generation: { stop_reason: gen.stopReason, usage: gen.usage, parse_error: gen.parseError, raw_text: gen.rawText },
+    check: check && { stop_reason: check.stopReason, usage: check.usage, problem: check.problem, raw_text: check.rawText },
   };
 }
 
@@ -293,6 +267,7 @@ async function processPerspective(supabase, match, side, teams, liveCount, stats
       break;
     }
     if (attempt.generation.parse_error) log(`${label} ${team.slug} attempt ${attempts}: ${attempt.generation.parse_error}`);
+    if (attempt.check?.problem) log(`${label} ${team.slug} attempt ${attempts}: checker: ${attempt.check.problem}`);
 
     const rows = [];
     for (const c of attempt.candidates) {
@@ -510,10 +485,12 @@ async function runDry(opts, deps) {
         }
       }
       perspective.generation = attempt.generation;
+      perspective.check = attempt.check;
       perspective.passed = attempt.candidates.filter((c) => c.result === 'pass').length;
       perspective.returned = attempt.candidates.length;
       perspective.candidates = attempt.candidates;
       if (attempt.generation.parse_error) log(`${label} ${team.slug}: ${attempt.generation.parse_error}`);
+      if (attempt.check?.problem) log(`${label} ${team.slug}: checker: ${attempt.check.problem}`);
     } catch (err) {
       // A dry run that couldn't finish still exits non-zero, since its output is incomplete.
       if (isAllowanceUsedUp(err)) {

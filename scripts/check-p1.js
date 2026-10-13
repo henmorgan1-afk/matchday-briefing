@@ -1,7 +1,8 @@
 // P1 check (SPEC.md §9). Runs `run-pipeline.js --match <id> --dry-run` against a finished match and
 // asserts the passing candidates are fit to write. Prints PASS/FAIL check-p1 and exits 0/1. Never
-// prints secrets. The dry run makes model calls (2 generation + up to 16 safety checks) with the
-// AI_PROVIDER's models: on Cloudflare they come out of the free daily allowance (Revision 18).
+// prints secrets. The dry run makes model calls (2 generation and 2 safety-check calls, one per side
+// since Revision 19) with the AI_PROVIDER's models: on Cloudflare they come out of the free daily
+// allowance (Revision 18).
 // The number, banned-term and name rules (N1, N2, N5) are the pipeline's own code gate
 // (lib/code-gate.js), re-applied here to the stored match and its stored FPL events, so a passing line
 // that slips past the gate still fails the check.

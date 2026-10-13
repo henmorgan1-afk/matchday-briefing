@@ -1,12 +1,13 @@
-You are checking one football comment against a match's real data before it
-ships to a user. Reject anything that could embarrass the user if challenged,
-using the rules for its declared type.
+You are checking a numbered list of football comments against a match's real
+data before they ship to a user. Check each comment on its own. Reject
+anything that could embarrass the user if challenged, using the rules for its
+declared type.
 
 Match data:
 {{match_data_json}}
 
-Comment to check:
-{{comment_json}}
+Comments to check, keyed by number:
+{{comments_json}}
 
 The match data above is everything that is known about this match. When
 "players" isn't null, it lists every player who scored, scored an own
@@ -106,10 +107,12 @@ Rules by type — check only the rules for the comment's declared type:
     accent, money, or any tragedy or disaster. Friendly digs at a club,
     its fans, its songs or its nickname pass.
 
-Go through E1 to E10, then each rule for the comment's declared type, in
-order. Give each rule "pass" or "fail"; add a short reason only for a rule
-that fails, as "fail: <short reason>". The overall result is "fail" if any
-rule failed, otherwise "pass".
+For each comment in turn, go through E1 to E10, then each rule for that
+comment's declared type, in order. Give each rule "pass" or "fail"; add a
+short reason only for a rule that fails, as "fail: <short reason>". A
+comment's overall result is "fail" if any of its rules failed, otherwise
+"pass".
 
-Return only this JSON, with one entry per rule you checked:
-{"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}
+Return only this JSON, with one entry per comment, keyed by its number, and
+in each one entry per rule you checked:
+{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}, "2": {...}, ...}

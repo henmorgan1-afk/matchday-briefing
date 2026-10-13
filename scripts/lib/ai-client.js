@@ -8,17 +8,16 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env'), quiet: true });
 
 const PROVIDERS = Object.freeze({
-  // Generation is judgment work, so it gets the larger model; each check sees one line at a time.
+  // Both are judgment work, so both get the larger model (Revision 19). Checking a side's lines in one
+  // call, rather than one call per line, keeps the stronger checker inside the free allowance.
   cloudflare: Object.freeze({
     generationModel: '@cf/openai/gpt-oss-120b',
-    checkModel: '@cf/openai/gpt-oss-20b',
-    checkConcurrency: 4,
+    checkModel: '@cf/openai/gpt-oss-120b',
   }),
-  // For running on the project owner's PC: no key, one model for both, one call at a time.
+  // For running on the project owner's PC: no key, one model for both.
   ollama: Object.freeze({
     generationModel: 'gpt-oss:20b',
     checkModel: 'gpt-oss:20b',
-    checkConcurrency: 1,
   }),
 });
 
@@ -26,12 +25,13 @@ const PROVIDER = (process.env.AI_PROVIDER ?? '').trim().toLowerCase() || 'cloudf
 if (!Object.prototype.hasOwnProperty.call(PROVIDERS, PROVIDER)) {
   throw new Error(`AI_PROVIDER must be "cloudflare" or "ollama", not ${JSON.stringify(process.env.AI_PROVIDER)}`);
 }
-const { generationModel: GENERATION_MODEL, checkModel: CHECK_MODEL, checkConcurrency: CHECK_CONCURRENCY } = PROVIDERS[PROVIDER];
+const { generationModel: GENERATION_MODEL, checkModel: CHECK_MODEL } = PROVIDERS[PROVIDER];
 
 const OLLAMA_URL = 'http://localhost:11434/v1/chat/completions';
 
 // Workers AI pricing page (13 Oct 2026): neurons per million tokens. The free allowance is 10,000
 // neurons a day, reset at 00:00 UTC; on the Workers Free plan, calls beyond it fail, never bill.
+// gpt-oss-20b is no longer used on Cloudflare (Revision 19); its rate stays for comparison.
 const NEURONS_PER_MILLION_TOKENS = Object.freeze({
   '@cf/openai/gpt-oss-120b': Object.freeze({ input: 31818, output: 68182 }),
   '@cf/openai/gpt-oss-20b': Object.freeze({ input: 18182, output: 27273 }),
@@ -221,7 +221,7 @@ function parseJsonReply(text) {
   }
 }
 
-// "cloudflare (generation @cf/openai/gpt-oss-120b, safety checks @cf/openai/gpt-oss-20b)"
+// "cloudflare (generation @cf/openai/gpt-oss-120b, safety checks @cf/openai/gpt-oss-120b)"
 const AI_DESCRIPTION = `${PROVIDER} (generation ${GENERATION_MODEL}, safety checks ${CHECK_MODEL})`;
 
 // The run's last line: its estimated neurons against the free daily allowance.
@@ -236,7 +236,6 @@ module.exports = {
   PROVIDER,
   GENERATION_MODEL,
   CHECK_MODEL,
-  CHECK_CONCURRENCY,
   AI_DESCRIPTION,
   NEURONS_PER_MILLION_TOKENS,
   FREE_NEURONS_PER_DAY,
