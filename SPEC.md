@@ -1693,7 +1693,7 @@ Return only this JSON, with one entry per rule you checked:
 
 ### 3.6 Score corrections
 
-If `fetch-matches.js` finds that a match already stored as `finished` now has a different full-time or half-time score from the API:
+If `fetch-matches.js` finds that a match already stored as `finished` now has a different full-time or half-time score from the API *(narrowed on 13 Oct 2026: only a `FINISHED` report with a different full-time score; see the note below)*:
 
 1. Update the scores.
 2. Set `superseded_at = now()` on every live comment for that match (both perspectives). Rows are kept, not deleted, so their `feedback` survives.
@@ -1702,6 +1702,15 @@ If `fetch-matches.js` finds that a match already stored as `finished` now has a 
 5. Log `SCORE CORRECTED: <match id> <old score> -> <new score>` as a warning.
 
 The frontend only ever shows comments with `superseded_at` null, so a line quoting the old score is never shown again.
+
+**Note (13 Oct 2026): only a FINISHED report with a new full-time score is a correction.**
+- **What happened.** At the 19:15 UTC run on 13 Oct, football-data.org briefly reported four matches from 11–12 Oct (560594, 560596, 560597 and 560598) as `TIMED` with no score. By 19:48 it reported them `FINISHED` with their old scores again. The rule above took the empty scores as a correction: it stored the matches as `scheduled` with no score, superseded all 52 of their live lines, deleted their FPL events and reset their attempt counters. Eight teams lost their latest briefing.
+- **Restored by hand.** The project owner disabled the pipeline workflow so main couldn't regenerate the matches with the paid API. The 52 rows were then restored by setting `superseded_at` back to null, filtered on both the four match ids and the exact timestamp, `2026-10-13T19:14:48.362+00:00`. Every side has 4 to 8 live lines again, so the next run marks the matches finished, refetches their FPL events and generates nothing.
+- **The rule now.** Once a match is stored as `finished`, `fetch-matches.js` changes it only on a `FINISHED` report with a full-time score:
+  - **Correction.** A `FINISHED` report with a different full-time score runs steps 1–5 above, as before.
+  - **Glitch.** Any other report for a stored finished match (`SCHEDULED`, `TIMED`, `POSTPONED`, `FINISHED` with no score, and so on) is held. The match row isn't written at all, so the match, its comments, its FPL events and its attempt counters are untouched. One warning names the match, its stored status and score, and the reported status and score: `WARNING: match <id> is stored as finished <score>, but football-data.org now reports <status> <score or "with no score">; left unchanged, not a score correction`.
+  - **Half-time only.** A `FINISHED` report with the same full-time score but a different half-time score is stored without superseding the lines, and logs a `WARNING` too. Before this note a half-time change was a correction (the first paragraph of this section). This follows the project owner's rule that only a new full-time score counts.
+- **Tested offline.** A throwaway test with fake football-data.org, FPL and Supabase data (since deleted) reproduced the incident against the old code. With the fix, the TIMED, POSTPONED and FINISHED-with-no-score reports change nothing and log one warning each. A real correction (4-1 to 4-2) still runs steps 1–5, and a scheduled match that finishes is stored as before.
 
 ## 4. Frontend (P2)
 
