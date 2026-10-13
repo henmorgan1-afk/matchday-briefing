@@ -24,6 +24,10 @@ const SETTING_ENV = new Set(['AI_PROVIDER']); // a plain setting ("cloudflare" o
 const UNKNOWN_SLUG = 'not-a-real-team';
 const SETTLE_MS = 20_000;
 const TAG_LABELS = { STAT: 'STAT', BANTER: 'BANTER', HOT_TAKE: 'HOT TAKE' };
+// football-data.org's terms, section 7.1: a visible credit on every page, worded and linked exactly so.
+const CREDIT_TEXT = 'Football data provided by the Football-Data.org API';
+const CREDIT_HREF = 'https://www.football-data.org';
+let creditPages = 0; // pages whose credit commonPageProblems checked
 
 const failures = [];
 const fail = (msg) => failures.push(msg);
@@ -183,13 +187,27 @@ async function visit(context, url) {
   await page.waitForFunction(() => document.body.dataset.state && document.body.dataset.state !== 'loading', null, { timeout: SETTLE_MS });
   const state = await page.evaluate(() => document.body.dataset.state);
   const mainText = (await page.locator('#main').innerText()).trim();
-  return { page, state, errors, mainText };
+  return { page, state, errors, mainText, credit: await creditOn(page) };
 }
 
-function commonPageProblems(label, { state, errors, mainText }) {
+// The footer's data credit (#footer-credit) as rendered: shown, its text, and where its links go.
+const creditOn = (page) => page.evaluate(() => {
+  const line = document.getElementById('footer-credit');
+  return {
+    visible: Boolean(line && line.checkVisibility({ visibilityProperty: true, opacityProperty: true }) && line.getBoundingClientRect().height > 0),
+    text: line ? line.textContent.replace(/\s+/g, ' ').trim() : null,
+    hrefs: line ? [...line.querySelectorAll('a')].map((a) => a.getAttribute('href')) : [],
+  };
+});
+
+function commonPageProblems(label, { state, errors, mainText, credit }) {
   if (state === 'error') fail(`${label} rendered the error state`);
   if (!mainText) fail(`${label} rendered a blank page`);
   for (const e of errors) fail(`${label} logged a console error: ${e}`);
+  creditPages += 1;
+  if (!credit.visible) fail(`${label}: the football-data.org credit (#footer-credit) isn't visible`);
+  if (credit.text !== CREDIT_TEXT) fail(`${label}: the data credit reads ${JSON.stringify(credit.text)}, expected ${JSON.stringify(CREDIT_TEXT)}`);
+  if (credit.hrefs.length !== 1 || credit.hrefs[0] !== CREDIT_HREF) fail(`${label}: the data credit links to [${credit.hrefs.join(', ')}], expected one link to ${CREDIT_HREF}`);
 }
 
 async function cardsOn(page) {
@@ -330,6 +348,7 @@ async function checkMatchParam(browser, base, currentTeams, expected) {
       ...v,
       state: await v.page.evaluate(() => document.body.dataset.state),
       mainText: (await v.page.locator('#main').innerText()).trim(),
+      credit: await creditOn(v.page),
     };
     commonPageProblems(label, followed);
     const theirs = { matchId: a.matchId, commentIds: (opponent && opponent.byMatch.get(a.matchId)) || [], opponent: from, opponentHasComments: true };
@@ -495,7 +514,8 @@ const installState = (page) => page.evaluate(() => {
     dialog: Boolean(dialog && dialog.open),
     opens: window.tipDialogOpens,
     footer: visible(document.getElementById('footer-iphone')),
-    footerBox: visible(document.querySelector('.footer')), // the footer and its rule, hidden when it has no visible line
+    footerBox: visible(document.querySelector('.footer')), // the footer and its rule: always shown, for the data credit
+    credit: visible(document.getElementById('footer-credit')),
   };
 });
 
@@ -636,13 +656,14 @@ async function checkInstall(browser, base, teamSlug) {
   const home = `${base}/`;
 
   // 1. Android home page on load: both buttons and the reassurance line, no tip line (gone in
-  //    Revision 15), the dialog closed and built as specified, and no footer iPhone line.
+  //    Revision 15), the dialog closed and built as specified, and no footer iPhone line, but the
+  //    footer itself still shows, with its data credit.
   await withInstallPage(browser, 'android', home, 'install (Android home)', async (page) => {
     const s = await installState(page);
     for (const [key, name] of [['area', 'install area'], ['bookmark', 'Bookmark button'], ['install', 'Install web app button'], ['reassure', 'reassurance line']]) {
       if (!s[key]) fail(`install: the ${name} is not visible on load (Android home page)`);
     }
-    if (s.footerBox) fail('install: the footer and its rule show with no visible line (Android home page)');
+    if (!s.footerBox || !s.credit) fail('install: the footer or its data credit is hidden alongside the install area (Android home page)');
     if (s.dialog || s.opens !== 0) fail('install: #tip-dialog is open on load, expected it closed');
     if (s.footer) fail("install: the footer's iPhone line shows alongside the install area");
     const parts = await page.evaluate(() => {
@@ -687,7 +708,8 @@ async function checkInstall(browser, base, teamSlug) {
   for (const device of Object.keys(INSTALL_UAS)) {
     await withInstallPage(browser, device, home, `install (${device} tips)`, async (page) => {
       const s = await installState(page);
-      if (s.footerBox) fail(`install: the footer and its rule show with no visible line on the home page with a ${device} user agent`);
+      if (!s.footerBox || !s.credit) fail(`install: the footer or its data credit is hidden on the home page with a ${device} user agent`);
+      if (s.footer) fail(`install: the footer's iPhone line shows alongside the install area with a ${device} user agent`);
       if (!s.area) {
         fail(`install: the install area is not visible on the home page with a ${device} user agent`);
         return;
@@ -833,7 +855,7 @@ async function checkInstall(browser, base, teamSlug) {
     }
   }, 360);
 
-  info(`install: Bookmark + Install web app and the reassurance line show on load (footer and its rule hidden, no tip line, dialog closed); the footer shows on team pages and once the area hides; ` +
+  info(`install: Bookmark + Install web app and the reassurance line show on load (footer iPhone line hidden but the footer and its data credit shown, no tip line, dialog closed); the iPhone line shows on team pages and once the area hides; ` +
     `the Bookmark and Install tip dialogs are right for ${Object.keys(INSTALL_UAS).join(', ')}, focus "Got it", reopen on a second tap, and close with "Got it", Escape and the backdrop, returning focus; ` +
     `a saved event prompts once with no dialog, hides the area when accepted and falls back to the dialog after a dismissal; appinstalled hides it; shown on ?team=${UNKNOWN_SLUG}, not on ?team=${teamSlug} or when installed (no dialog either); ` +
     `one row of single-line buttons (${sizes.join('; ')}); cards fit (${cards.join('; ')}); step took ${((Date.now() - started) / 1000).toFixed(1)} s`);
@@ -871,6 +893,7 @@ const CONTRAST_ROWS = [
   { page: 'home', name: 'Install web app, hover', sel: '#install-button', state: 'hover', fg: '--paper', bg: '--accent-pressed' },
   { page: 'home', name: 'Install web app, pressed', sel: '#install-button', state: 'active', fg: '--paper', bg: '--accent-pressed' },
   { page: 'home', name: 'reassurance line', sel: '.install__reassure', fg: '--muted', bg: 'page' },
+  { page: 'home', name: 'footer data credit', sel: '#footer-credit a', fg: '--muted', bg: 'page' },
   // tip pop-up, opened from Bookmark
   { page: 'tip', name: 'tip heading', sel: '#tip-dialog-title', fg: '--accent', bg: '--card' },
   { page: 'tip', name: 'tip text', sel: '#tip-dialog-text', fg: '--ink', bg: '--card' },
@@ -898,7 +921,7 @@ const CONTRAST_ROWS = [
   { page: 'team', name: 'thumb icon', sel: 'button.thumb--up', fg: '--accent', bg: '--card', need: 3 },
   { page: 'team', name: 'thumb icon, pressed', sel: 'button.thumb--down', pressThumb: true, fg: '--paper', bg: '--accent', need: 3 },
   { page: 'team', name: 'toast', sel: '#toast', copyFirst: true, fg: '--accent', bg: '--card' },
-  { page: 'team', name: 'footer', sel: '.footer p', fg: '--muted', bg: 'page' },
+  { page: 'team', name: 'footer iPhone line', sel: '#footer-iphone', fg: '--muted', bg: 'page' },
   // other states
   { page: 'unknown', name: '"We don\'t know that team"', sel: '.notice--unknown', fg: '--ink', bg: '--card' },
   { page: 'empty', name: '"No briefing yet"', sel: '.empty', fg: '--ink', bg: '--card', optional: true },
@@ -1264,6 +1287,7 @@ async function main() {
   } finally {
     await browser.close();
   }
+  info(`data credit: "${CREDIT_TEXT}", linked to ${CREDIT_HREF}, checked on ${creditPages} page loads`);
 
   if (failures.length) {
     for (const f of failures) console.log(`  - ${f}`);
@@ -1272,7 +1296,7 @@ async function main() {
   }
   console.log(`PASS check-p2: ${currentTeams.length} picker entries; ${currentTeams.length} team pages render (${withBriefing} briefings, ` +
     `${currentTeams.length - withBriefing} "No briefing yet") with no console errors; opposition link and ?match= fallbacks work; unknown slug handled; Bookmark + Install web app shown only where they should be, with the right tip pop-ups; ` +
-    `amber terminal fonts, colours and contrast right, and nothing too wide at ${LOOK_WIDTHS.join(', ')}px; manifest and sw.js valid; ` +
+    `amber terminal fonts, colours and contrast right, and nothing too wide at ${LOOK_WIDTHS.join(', ')}px; football-data.org credit on every page; manifest and sw.js valid; ` +
     `no secrets in ${files.length} frontend files; ` +
     (isLive ? 'live domain serves HTTPS and redirects http:// and www.' : `live-domain checks NOT run (base ${base})`));
 }
