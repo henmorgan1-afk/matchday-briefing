@@ -18,12 +18,21 @@ const HOUR_MS = 3_600_000;
 const PLAYER_UPSERT_CHUNK = 500;
 
 const SCORE_FIELDS = ['home_score', 'away_score', 'home_ht_score', 'away_ht_score'];
+const FULL_TIME_FIELDS = ['home_score', 'away_score'];
+const HALF_TIME_FIELDS = ['home_ht_score', 'away_ht_score'];
 
 function formatScore(row) {
   const ft = `${row.home_score ?? '?'}-${row.away_score ?? '?'}`;
   const ht = row.home_ht_score == null && row.away_ht_score == null ? '' : ` (HT ${row.home_ht_score ?? '?'}-${row.away_ht_score ?? '?'})`;
   return ft + ht;
 }
+
+const hasFullTimeScore = (row) => row.home_score != null && row.away_score != null;
+const describeScore = (row) => (hasFullTimeScore(row) ? formatScore(row) : 'with no score');
+
+// §3.6 (13 Oct 2026 note): once a match is stored as finished, only a FINISHED report with a full-time
+// score may change it. Anything else is taken as a glitch in football-data.org's data.
+const isFinishedReport = (row) => row.api_status === 'FINISHED' && hasFullTimeScore(row);
 
 async function upsertTeams(supabase, apiTeams, nowIso) {
   const existing = unwrap(await supabase.from('teams').select('id, slug'), 'read teams');
@@ -110,7 +119,7 @@ async function applyScoreCorrection(supabase, oldRow, newRow, nowIso) {
 
 async function upsertMatches(supabase, apiMatches, nowIso) {
   const rows = apiMatches.map((m) => toMatchRow(m, nowIso));
-  if (rows.length === 0) return { count: 0, byStatus: {}, corrections: [], unmapped: [] };
+  if (rows.length === 0) return { count: 0, byStatus: {}, corrections: [], held: [], unmapped: [] };
 
   const existing = unwrap(
     await supabase.from('matches').select(`id, status, ${SCORE_FIELDS.join(', ')}`).in('id', rows.map((r) => r.id)),
@@ -118,12 +127,30 @@ async function upsertMatches(supabase, apiMatches, nowIso) {
   );
   const existingById = new Map(existing.map((r) => [r.id, r]));
 
+  // A stored finished match reported as anything but FINISHED with a full-time score (SCHEDULED,
+  // TIMED, POSTPONED, no score and so on) is held: not written at all, so the match, its comments,
+  // its FPL events and its attempt counters stay as they are. On 13 Oct 2026 a report of TIMED with
+  // no score was taken as a score correction and hid four briefings. Only a FINISHED report with a
+  // different full-time score is a correction now. A changed half-time score alone is stored, with a
+  // warning, and the lines are kept.
   const corrections = [];
+  const held = [];
+  const toWrite = [];
   for (const row of rows) {
     const old = existingById.get(row.id);
-    if (old && old.status === 'finished' && SCORE_FIELDS.some((f) => old[f] !== row[f])) {
-      corrections.push({ old, row });
+    if (old && old.status === 'finished') {
+      if (!isFinishedReport(row)) {
+        held.push(row.id);
+        console.warn(`WARNING: match ${row.id} is stored as ${old.status} ${describeScore(old)}, but football-data.org now reports ${row.api_status} ${describeScore(row)}; left unchanged, not a score correction`);
+        continue;
+      }
+      if (FULL_TIME_FIELDS.some((f) => old[f] !== row[f])) {
+        corrections.push({ old, row });
+      } else if (HALF_TIME_FIELDS.some((f) => old[f] !== row[f])) {
+        console.warn(`WARNING: match ${row.id} half-time score changed, ${formatScore(old)} -> ${formatScore(row)}, with the same full-time score; stored, but its lines are kept (not a score correction)`);
+      }
     }
+    toWrite.push(row);
   }
 
   const unmapped = [];
@@ -137,11 +164,11 @@ async function upsertMatches(supabase, apiMatches, nowIso) {
 
   // Generation-attempt and FPL columns are left out, so inserts take their defaults and updates
   // leave them alone.
-  unwrap(await supabase.from('matches').upsert(rows, { onConflict: 'id' }), 'upsert matches');
+  if (toWrite.length) unwrap(await supabase.from('matches').upsert(toWrite, { onConflict: 'id' }), 'upsert matches');
 
   // §2.3 step 3: when a match is first stored as finished. Set in its own update, never in the
   // upsert, so it can't be overwritten later.
-  const newlyFinished = rows.filter((r) => r.status === 'finished' && existingById.get(r.id)?.status !== 'finished').map((r) => r.id);
+  const newlyFinished = toWrite.filter((r) => r.status === 'finished' && existingById.get(r.id)?.status !== 'finished').map((r) => r.id);
   if (newlyFinished.length) {
     unwrap(
       await supabase.from('matches').update({ finished_seen_at: nowIso }).in('id', newlyFinished).is('finished_seen_at', null),
@@ -151,9 +178,10 @@ async function upsertMatches(supabase, apiMatches, nowIso) {
 
   for (const { old, row } of corrections) await applyScoreCorrection(supabase, old, row, nowIso);
 
+  // What's stored after this run: a held match is still finished.
   const byStatus = {};
-  for (const row of rows) byStatus[row.status] = (byStatus[row.status] || 0) + 1;
-  return { count: rows.length, byStatus, corrections: corrections.map((c) => c.row.id), unmapped };
+  for (const status of [...toWrite.map((r) => r.status), ...held.map(() => 'finished')]) byStatus[status] = (byStatus[status] || 0) + 1;
+  return { count: rows.length, byStatus, corrections: corrections.map((c) => c.row.id), held, unmapped };
 }
 
 // ---------------------------------------------------------------- FPL step (SPEC.md §2.3)
