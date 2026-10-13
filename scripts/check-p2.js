@@ -20,6 +20,7 @@ const LIVE_ORIGIN = 'https://didyouseethatludicrousdisplaylastnight.co.uk';
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const ENV_FILE = path.join(__dirname, '..', '.env');
 const PUBLIC_ENV = new Set(['SUPABASE_URL', 'SUPABASE_ANON_KEY']); // committed in frontend/config.js by design
+const SETTING_ENV = new Set(['AI_PROVIDER']); // a plain setting ("cloudflare" or "ollama"), not a secret (Revision 18)
 const UNKNOWN_SLUG = 'not-a-real-team';
 const SETTLE_MS = 20_000;
 const TAG_LABELS = { STAT: 'STAT', BANTER: 'BANTER', HOT_TAKE: 'HOT TAKE' };
@@ -42,11 +43,12 @@ function frontendFiles(dir = FRONTEND_DIR) {
   });
 }
 
-// Every .env value except the two public ones, by name. Values under 8 characters are skipped:
-// they can't be keys and would match by accident.
+// Every .env value except the two public ones and AI_PROVIDER, by name, so new secrets such as
+// CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are covered without listing them. Values under 8
+// characters are skipped: they can't be keys and would match by accident.
 function privateEnvValues() {
   const parsed = fs.existsSync(ENV_FILE) ? dotenv.parse(fs.readFileSync(ENV_FILE)) : {};
-  return Object.entries(parsed).filter(([name, value]) => !PUBLIC_ENV.has(name) && value && value.length >= 8);
+  return Object.entries(parsed).filter(([name, value]) => !PUBLIC_ENV.has(name) && !SETTING_ENV.has(name) && value && value.length >= 8);
 }
 
 // ---------------------------------------------------------------- expected state, from Supabase

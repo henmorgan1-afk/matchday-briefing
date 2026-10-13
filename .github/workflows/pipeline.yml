@@ -21,7 +21,7 @@ permissions:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60                # the run starts no new match after 40 minutes (Revision 18)
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,7 +32,9 @@ jobs:
       - name: Fetch matches, generate and check comments
         env:
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          AI_PROVIDER: cloudflare         # Workers AI's free daily allowance (Revision 18)
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           MATCH_ID: ${{ inputs.match }}   # via env, never interpolated into the script
