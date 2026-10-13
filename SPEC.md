@@ -1078,9 +1078,43 @@ The project owner changed the mix, and asked for the code gate to enforce the ru
 4. **False-positive test** (read-only, 13 Oct 2026). The new rules ran over 242 lines: all 200 live comments, plus the 42 passing lines of three dry runs (560595 in rounds 1 and 2, and 560598 in round 2). They caught 15:
    - every round-2 problem found by reading: "no contest", "finally buzzing", "proper travelling support, rain or shine", "City keeper" and its note, and a note saying "goalkeeper saves";
    - round 1's "proper travelling support, rain or shine";
-   - in Claude's live lines, one "…, rain or shine" tail, and eight uses of "keeper(s)" or "goalkeeper". Six of those eight are in notes explaining saves ("Saves show shots a goalkeeper stopped"). They break the prompt's note rule ("no 'the keeper'") and E9, but they're accurate. Whether to allow keeper words for a player with saves is the project owner's call.
+   - in Claude's live lines, one "…, rain or shine" tail, and eight uses of "keeper(s)" or "goalkeeper". Six of those eight are in notes explaining saves ("Saves show shots a goalkeeper stopped"). They break the prompt's note rule ("no 'the keeper'") and E9, but they're accurate.
    - None of Claude's 200 live lines uses an other-match word.
-5. **Not yet dry-run** with the new mix.
+5. **Keeper decision** (the project owner's): E9 stays strict. Keeper words fail in a line or note even for a player with saves, and there's no exemption.
+
+**Dry runs** (13 Oct 2026, `PROMPT_VERSION` `90a110dd`). Round 2's files are kept as `review/dryrun-560595-round2.json` and `review/dryrun-560598-round2.json`.
+
+| | 560595, Chelsea 5-1 Bournemouth | 560598, Liverpool 0-3 Man City | 560597, Coventry 4-1 Newcastle |
+|---|---|---|---|
+| Passed | Chelsea 5/8, Bournemouth 8/8 | Liverpool 5/8, Man City 6/8 | Coventry 6/8, Newcastle 6/8 |
+| Calls | 2 generation, 2 checks | 2 generation, 2 checks | 2 generation, 2 checks |
+| Tokens | 11,514 in, 13,902 out | 11,488 in, 12,977 out | 11,684 in, 12,186 out |
+| Estimated neurons | 1,314 | 1,250 | 1,203 |
+| Matches a day | about 7.6 | about 8 | about 8.3 |
+
+- Every side reached 4 passing lines. Every call stopped normally, with no model failure, unparseable reply or allowance problem.
+- **Caught by the new gate rules:** "finally" twice (Chelsea and Coventry) and a note saying "players". No tail or position word got past the checker this time.
+- **Caught by the checker:**
+  - a lack-of-effort implication (H2);
+  - two players criticised for their saves (E10: A.Becker and Horníček);
+  - "Haaland ... three goals" when he scored one (E2);
+  - "shipping five" in a first half with one goal in it (E2);
+  - "discipline needs fixing" (H2).
+- **Caught by the variety check:** three lines that opened like a line already passed for the other side.
+- **Still wrong in lines that passed:**
+  - **Factual error:** Bournemouth's "Chelsea's attack was a relentless six‑goal blitz." Chelsea scored five. Six is the match's total, which is why the code gate's number check passed it: it accepts any number in the match data. Its note ("based on total goals conceded") is wrong too.
+  - **E10 by implication:** Chelsea's "Martinez made three saves. Still conceded one." The checker failed the same pattern for A.Becker and Horníček.
+  - **Copied from the prompt:** Man City's "Won ugly. Not complaining." is the prompt's tone example word for word. At four words it's under the code gate's five-word copy check.
+  - **The prompt's STAT rules:**
+    - Liverpool's "Zero points after a level first half, then three‑nil loss." recites the half-time and final scores together.
+    - Bournemouth's "Bit of a shocker." borrows "a shocker" from the prompt's voice examples.
+  - **Probably an invented chant (B6):** Bournemouth's "Your Blues sing about royalty".
+  - **Tails after a comma:** "nothing happening", "still not enough", "shipped four", "nothing stopped them".
+  - **Borderline:**
+    - "No surprise" implies form (E3).
+    - "Gravenberch sent off, then three‑nil defeat" implies the red card came first.
+    - "Your Magpies always bring the wind, never the thunder" may describe past meetings (B3).
+- The lines are still flatter than Claude's live ones for 560598 and 560597, and most notes are labels rather than help for someone who doesn't follow football.
 
 ## 1. Architecture
 
