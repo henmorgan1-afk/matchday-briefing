@@ -1,6 +1,7 @@
 // P1 check (SPEC.md §9). Runs `run-pipeline.js --match <id> --dry-run` against a finished match and
 // asserts the passing candidates are fit to write. Prints PASS/FAIL check-p1 and exits 0/1. Never
-// prints secrets. The dry run makes model calls (2 generation + up to 16 safety checks).
+// prints secrets. The dry run makes model calls (2 generation + up to 16 safety checks) with the
+// AI_PROVIDER's models: on Cloudflare they come out of the free daily allowance (Revision 18).
 // The number, banned-term and name rules (N1, N2, N5) are the pipeline's own code gate
 // (lib/code-gate.js), re-applied here to the stored match and its stored FPL events, so a passing line
 // that slips past the gate still fails the check.
@@ -85,6 +86,8 @@ async function main() {
   if (output) {
     info(`match ${output.match_id}: ${output.match} ${output.score}; prompt_version ${output.prompt_version}; ` +
       `calls: ${output.calls.generation} generation, ${output.calls.safety_check} safety-check`);
+    const neurons = output.estimated_neurons == null ? '' : `; about ${output.estimated_neurons} Cloudflare neurons`;
+    info(`AI provider ${output.ai_provider}: generation ${output.generation_model}, safety checks ${output.check_model}${neurons}`);
 
     for (const side of ['home', 'away']) {
       const teamId = side === 'home' ? match.home_team_id : match.away_team_id;

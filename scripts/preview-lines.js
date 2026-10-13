@@ -1,5 +1,5 @@
 // Free line previews: builds the generation prompt for a finished match and checks hand-written lines
-// against the code gate, without calling the Anthropic API. Claude Code writes the lines itself
+// against the code gate, without calling any AI service. Claude Code writes the lines itself
 // (CLAUDE.md, "Previewing lines for free"). Reads from Supabase; never writes to it.
 //
 // Usage:
@@ -13,8 +13,9 @@
 //       note as generate-comments.js does, and runs every line through the code gate for its side,
 //       then the first-three-words variety check across both sides.
 //
-// Never import lib/claude-client.js, generate-comments.js or safety-check.js here: this tool must
-// make no model calls.
+// Never call lib/ai-client.js's complete(), or import generate-comments.js or safety-check.js here:
+// this tool must make no model calls. (match-data.js reads ai-client.js's model IDs for
+// PROMPT_VERSION, which makes no call.)
 
 const fs = require('fs');
 const path = require('path');

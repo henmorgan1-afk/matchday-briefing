@@ -15,7 +15,6 @@
     "check:p2": "node scripts/check-p2.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.131.0",
     "@supabase/supabase-js": "^2.117.2",
     "dotenv": "^18.0.5"
   },

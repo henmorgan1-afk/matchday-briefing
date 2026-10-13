@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { TARGET_MIX } = require('./constants');
+const { PROVIDER, GENERATION_MODEL, CHECK_MODEL } = require('./ai-client');
 
 const PROMPTS_DIR = path.join(__dirname, '..', '..', 'prompts');
 const GENERATION_PROMPT_FILE = 'generation-prompt.md';
@@ -174,7 +175,8 @@ function fillTemplate(template, values) {
   });
 }
 
-// First 8 hex characters of SHA-256 over both prompts and TARGET_MIX, NUL-separated.
+// First 8 hex characters of SHA-256 over both prompts, TARGET_MIX, and the AI provider with both
+// model IDs (Revision 18), NUL-separated. So switching provider or model changes the version too.
 function computePromptVersion() {
   const hash = crypto.createHash('sha256');
   hash.update(loadPrompt(GENERATION_PROMPT_FILE));
@@ -182,6 +184,8 @@ function computePromptVersion() {
   hash.update(loadPrompt(SAFETY_CHECKER_PROMPT_FILE));
   hash.update('\0');
   hash.update(JSON.stringify(TARGET_MIX));
+  hash.update('\0');
+  hash.update(JSON.stringify({ provider: PROVIDER, generation: GENERATION_MODEL, check: CHECK_MODEL }));
   return hash.digest('hex').slice(0, 8);
 }
 

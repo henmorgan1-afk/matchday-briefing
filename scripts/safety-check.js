@@ -1,8 +1,9 @@
 // P1: checks one candidate against its match data with the §3.4 safety-checker prompt (SPEC.md §3.3).
-// Fails closed: a refusal or an unparseable verdict is a "fail", never a pass. Throws only when the
-// model call itself fails outright. Called by run-pipeline.js; has no CLI of its own.
+// Fails closed: a refusal (a content-filter stop, Revision 18) or an unparseable verdict is a "fail",
+// never a pass. Throws only when the model call itself fails outright. Uses ai-client.js's check model.
+// Called by run-pipeline.js; has no CLI of its own.
 
-const { complete, parseJsonReply } = require('./lib/claude-client');
+const { CHECK_MODEL, complete, parseJsonReply } = require('./lib/ai-client');
 const { SAFETY_CHECKER_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
 
 const TEMPLATE = loadPrompt(SAFETY_CHECKER_PROMPT_FILE);
@@ -54,7 +55,7 @@ async function safetyCheck(matchData, candidate) {
     match_data_json: matchDataJson(matchData),
     comment_json: JSON.stringify({ type: candidate.type, text: candidate.text, note: candidate.note }, null, 2),
   });
-  const { text, stopReason, usage } = await complete(prompt);
+  const { text, stopReason, usage } = await complete(prompt, { model: CHECK_MODEL });
   return { ...readVerdict(text, stopReason), usage };
 }
 

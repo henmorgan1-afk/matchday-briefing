@@ -11,11 +11,16 @@
 //
 // Exits non-zero if the fetch or its FPL step fails, or if any model call or comment write fails.
 // A perspective whose attempt failed keeps its old attempt counter and is retried on the next run.
+// Two stops aren't failures and leave the exit code alone (Revision 18): Cloudflare's free daily AI
+// allowance running out, after which the run makes no more model calls, and the 40-minute limit on
+// starting a new match. Either way, the remaining matches are done on a later run.
 
 const fs = require('fs');
 const path = require('path');
 const { getServiceClient, unwrap, readAll } = require('./lib/supabase-client');
-const { GENERATION_MODEL } = require('./lib/claude-client');
+const {
+  PROVIDER, GENERATION_MODEL, CHECK_MODEL, CHECK_CONCURRENCY, AI_DESCRIPTION, isAllowanceUsedUp, neuronSummary,
+} = require('./lib/ai-client');
 const { PROMPT_VERSION, buildMatchData, londonIsoDate } = require('./lib/match-data');
 const { codeGateProblems, openingWords } = require('./lib/code-gate');
 const { readPlayerData, readNameIndex, perspectiveNames } = require('./lib/player-data');
@@ -25,9 +30,12 @@ const {
 
 const USAGE = 'usage: node scripts/run-pipeline.js [--match <id> [--dry-run]]';
 const SIDES = ['home', 'away'];
-const CHECK_CONCURRENCY = 4;
 const ID_CHUNK = 100;
 const REVIEW_DIR = path.join(__dirname, '..', 'review');
+// No new match is started after this much run time; pipeline.yml's timeout-minutes is 60 (Revision 18).
+const NEW_MATCH_CUTOFF_MINUTES = 40;
+const ALLOWANCE_LINE = 'The free daily AI allowance is used up, so the remaining matches will be done on a later run.';
+const CUTOFF_LINE = `This run has been going for ${NEW_MATCH_CUTOFF_MINUTES} minutes, so the remaining matches will be done on a later run.`;
 
 let log = console.log; // a dry run sends logs to stderr so stdout stays pure JSON
 
@@ -49,12 +57,13 @@ function parseArgs(argv) {
 const dedupeKey = (text) => text.trim().toLowerCase();
 
 function newStats() {
-  return { generationCalls: 0, safetyCheckCalls: 0, inputTokens: 0, outputTokens: 0 };
+  return { generationCalls: 0, safetyCheckCalls: 0, inputTokens: 0, outputTokens: 0, neurons: 0 };
 }
 
 function addUsage(stats, usage) {
   stats.inputTokens += usage.input_tokens;
   stats.outputTokens += usage.output_tokens;
+  stats.neurons += usage.neurons ?? 0;
 }
 
 // ---------------------------------------------------------------- model work
@@ -239,6 +248,11 @@ function runContext(supabase) {
   };
 }
 
+// SPEC.md §3.1 step 2's first two conditions: under MIN_PASSING_COUNT live comments, under the attempt cap.
+function needsAttempt(match, side, live) {
+  return live < MIN_PASSING_COUNT && match[`${side}_generation_attempts`] < MAX_GENERATION_ATTEMPTS;
+}
+
 // SPEC.md §3.1 steps 2-5 for one perspective. Returns a report for the summary line. The match has
 // already passed the generation gate.
 async function processPerspective(supabase, match, side, teams, liveCount, stats, deps, label, ctx) {
@@ -246,9 +260,9 @@ async function processPerspective(supabase, match, side, teams, liveCount, stats
   const field = `${side}_generation_attempts`;
   let attempts = match[field];
   let live = liveCount;
-  const report = { slug: team.slug, attempts: [], live, failed: false, note: null };
+  const report = { slug: team.slug, attempts: [], live, failed: false, deferred: false, allowanceUsedUp: false, note: null };
 
-  if (!(live < MIN_PASSING_COUNT && attempts < MAX_GENERATION_ATTEMPTS)) return report;
+  if (!needsAttempt(match, side, live)) return report;
 
   const playerData = await ctx.playerData(match);
   const matchData = buildMatchData(match, team, opponent, playerData);
@@ -269,6 +283,11 @@ async function processPerspective(supabase, match, side, teams, liveCount, stats
       attempt = await runAttempt(matchData, names, stats, deps);
     } catch (err) {
       await undoAttempt(supabase, match.id, field, attempts);
+      // Revision 18: not a failure. The caller logs the one plain line and makes no more model calls.
+      if (isAllowanceUsedUp(err)) {
+        Object.assign(report, { deferred: true, allowanceUsedUp: true });
+        break;
+      }
       log(`MODEL CALL FAILED: ${label} ${team.slug} attempt ${attempts}: ${describeFailure(err)}; nothing written, attempt undone, retried next run`);
       report.failed = true;
       break;
@@ -338,6 +357,7 @@ function formatPerspective(report) {
   if (report.attempts.length === 0) {
     const base = `${report.slug}: ${report.live} stored`;
     if (report.failed) return `${base}, MODEL CALL FAILED (retried next run)`;
+    if (report.deferred) return `${base}, deferred to a later run`;
     if (report.note) return `${base} (${report.note})`;
     return report.live < MIN_PASSING_COUNT ? `${base} (attempt cap reached)` : base;
   }
@@ -347,18 +367,22 @@ function formatPerspective(report) {
   let line = `${report.slug}: ${parts}`;
   if (written !== passed) line += ` [${written} written]`;
   if (report.failed) line += ', then MODEL CALL FAILED (retried next run)';
+  if (report.deferred) line += ', then deferred to a later run';
   return line;
 }
 
 function printTotals(stats, print) {
+  print(`AI provider: ${AI_DESCRIPTION}`);
   print(`generation calls this run: ${stats.generationCalls}`);
   print(`safety-check calls this run: ${stats.safetyCheckCalls}`);
   print(`model tokens this run: ${stats.inputTokens} input, ${stats.outputTokens} output`);
+  print(neuronSummary(stats.neurons));
 }
 
 async function runNormal(opts, deps) {
   const supabase = deps.supabase;
   const stats = newStats();
+  const startedAt = Date.now();
   if (deps.fetchMatches) {
     const fetched = await deps.fetchMatches();
     if (fetched) require('./fetch-matches').logFetchSummary(fetched);
@@ -384,6 +408,9 @@ async function runNormal(opts, deps) {
   }
 
   let ok = true;
+  // Revision 18: set once the free daily AI allowance is used up or the cutoff has passed. After that
+  // no model call is made, and matches with work left wait for a later run. Neither affects `ok`.
+  let stopped = false;
   if (matches.length) {
     const teams = await readTeams(supabase);
     const liveCounts = await readLiveCounts(supabase, matches.map((m) => m.id));
@@ -396,14 +423,30 @@ async function runNormal(opts, deps) {
         if (opts.matchId) log(`${label} — waiting for FPL player data (player_data ${match.player_data}); nothing generated`);
         continue;
       }
+      const live = Object.fromEntries(SIDES.map((side) => {
+        const teamId = side === 'home' ? match.home_team_id : match.away_team_id;
+        return [side, liveCounts.get(`${match.id}:${teamId}`) ?? 0];
+      }));
+      const hasWork = SIDES.some((side) => needsAttempt(match, side, live[side]));
+      if (hasWork && !stopped && Date.now() - startedAt >= NEW_MATCH_CUTOFF_MINUTES * 60 * 1000) {
+        log(CUTOFF_LINE);
+        stopped = true;
+      }
+      if (hasWork && stopped) continue;
       const reports = [];
       for (const side of SIDES) {
-        const teamId = side === 'home' ? match.home_team_id : match.away_team_id;
-        const report = await processPerspective(supabase, match, side, teams, liveCounts.get(`${match.id}:${teamId}`) ?? 0, stats, deps, label, ctx);
+        // The allowance ran out on the home side: the away side is left for a later run too.
+        const report = stopped && needsAttempt(match, side, live[side])
+          ? { slug: sideTeams(match, side, teams).team.slug, attempts: [], live: live[side], deferred: true }
+          : await processPerspective(supabase, match, side, teams, live[side], stats, deps, label, ctx);
         if (report.failed) ok = false;
+        if (report.allowanceUsedUp) {
+          log(ALLOWANCE_LINE);
+          stopped = true;
+        }
         reports.push(report);
       }
-      const touched = reports.some((r) => r.attempts.length || r.failed || r.note);
+      const touched = reports.some((r) => r.attempts.length || r.failed || r.deferred || r.note);
       if (touched || opts.matchId) log(`${label} — ${reports.map(formatPerspective).join(', ')}`);
     }
   }
@@ -436,17 +479,25 @@ async function runDry(opts, deps) {
     score: `${match.home_score}-${match.away_score}${ht}`,
     player_data: match.player_data,
     prompt_version: PROMPT_VERSION,
+    ai_provider: PROVIDER,
     generation_model: GENERATION_MODEL,
+    check_model: CHECK_MODEL,
     run_at: new Date().toISOString(),
     perspectives: [],
   };
 
   let ok = true;
+  let allowanceUsedUp = false; // Revision 18: no model call after Cloudflare says so
   for (const side of SIDES) {
     const { team, opponent } = sideTeams(match, side, teams);
     const matchData = buildMatchData(match, team, opponent, playerData);
     const names = perspectiveNames(nameIndex, match, team, playerData);
     const perspective = { side, team_id: team.id, team: team.short_name, slug: team.slug, match_data: matchData };
+    if (allowanceUsedUp) {
+      perspective.error = 'not attempted: the free daily AI allowance is used up';
+      output.perspectives.push(perspective);
+      continue;
+    }
     try {
       const attempt = await runAttempt(matchData, names, stats, deps);
       for (const c of attempt.candidates) {
@@ -464,8 +515,15 @@ async function runDry(opts, deps) {
       perspective.candidates = attempt.candidates;
       if (attempt.generation.parse_error) log(`${label} ${team.slug}: ${attempt.generation.parse_error}`);
     } catch (err) {
-      perspective.error = `MODEL CALL FAILED: ${describeFailure(err)}`;
-      log(`${label} ${team.slug}: ${perspective.error}`);
+      // A dry run that couldn't finish still exits non-zero, since its output is incomplete.
+      if (isAllowanceUsedUp(err)) {
+        allowanceUsedUp = true;
+        perspective.error = 'the free daily AI allowance is used up';
+        log('The free daily AI allowance is used up, so this dry run stopped. It resets at 00:00 UTC.');
+      } else {
+        perspective.error = `MODEL CALL FAILED: ${describeFailure(err)}`;
+        log(`${label} ${team.slug}: ${perspective.error}`);
+      }
       ok = false;
     }
     output.perspectives.push(perspective);
@@ -473,6 +531,7 @@ async function runDry(opts, deps) {
 
   output.calls = { generation: stats.generationCalls, safety_check: stats.safetyCheckCalls };
   output.tokens = { input: stats.inputTokens, output: stats.outputTokens };
+  output.estimated_neurons = PROVIDER === 'cloudflare' ? Math.round(stats.neurons) : null;
 
   const json = `${JSON.stringify(output, null, 2)}\n`;
   fs.mkdirSync(REVIEW_DIR, { recursive: true });

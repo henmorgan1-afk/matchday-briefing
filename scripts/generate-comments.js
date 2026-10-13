@@ -3,7 +3,7 @@
 // fail without spending a safety-check call. Called by run-pipeline.js; has no CLI of its own.
 
 const { COMMENT_TYPES, TARGET_MIX, MAX_COMMENTS_PER_PERSPECTIVE } = require('./lib/constants');
-const { complete, parseJsonReply } = require('./lib/claude-client');
+const { complete, parseJsonReply } = require('./lib/ai-client');
 const { GENERATION_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
 const { normaliseDashes } = require('./lib/code-gate');
 
