@@ -1350,7 +1350,7 @@ Command-line options for `run-pipeline.js`:
 
 ### 3.2 Target composition
 
-Per perspective, per match: **8 comments — 2 `STAT` / 3 `BANTER` / 3 `HOT_TAKE`**. This is a target passed to the generation prompt, not a guarantee — the safety checker may unevenly fail one type more than another, and the pipeline does not enforce per-type minimums, only the overall `MIN_PASSING_COUNT = 4`.
+Per perspective, per match: **8 comments — 3 `STAT` / 1 `BANTER` / 4 `HOT_TAKE`** (Revision 20, the project owner's decision; it was 2 / 3 / 3). This is a target passed to the generation prompt, not a guarantee — the safety checker may unevenly fail one type more than another, and the pipeline does not enforce per-type minimums, only the overall `MIN_PASSING_COUNT = 4`.
 
 ### 3.3 Safety rule, by type
 
@@ -1455,7 +1455,7 @@ Rules for every comment:
 - Never contradict the match data, even in an opinion.
 
 Write exactly 8 comments in this mix:
-- 2 STAT: a short line whose every specific claim is drawn directly from
+- 3 STAT: a short line whose every specific claim is drawn directly from
   the match data above (final score, half-time score if present, result,
   points, clean sheet, home or away, matchday, date, and from "players"
   who scored, scored an own goal, was sent off, missed or saved a
@@ -1466,7 +1466,7 @@ Write exactly 8 comments in this mix:
   single most surprising or telling fact and add a short, dry fan
   reaction of your own that makes no claim. Don't borrow a reaction from
   this prompt.
-- 3 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
+- 1 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
   match's specific events. No numbers or scorelines of any kind, not even
   number words like "one" or "nil". It can say how a fixture, an atmosphere
   or a club's fans feel or behave. It must not say anything about what
@@ -1475,7 +1475,7 @@ Write exactly 8 comments in this mix:
   basketball score", no "always try and rough us up", no "we always
   struggle there"), and no specific date or named past incident (you have
   no way to verify those, so don't invent them). Never name a player, and
-  never mention this match's day, date or result. Make at least one a friendly
+  never mention this match's day, date or result. Make it a friendly
   wind-up aimed at the other club. Club culture is fair game only when
   it's famous enough that fans of both clubs would know it: a club's
   common nickname or its best-known terrace song. Never invent a chant,
@@ -1483,7 +1483,7 @@ Write exactly 8 comments in this mix:
   songs or its nickname. Never mock a town, city, region or accent, money,
   or any tragedy or disaster. No patronising praise or pity for the other
   club ("credit where it's due", "bless them").
-- 3 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played
+- 4 HOT_TAKE: a strong, clearly-opinion-framed take about how a team played
   as a whole, or how a player listed in "players" played. Positive takes can
   be as enthusiastic as you like. Negative takes can be just as strong about
   PERFORMANCE ("worst first half I've seen from us all season", if the

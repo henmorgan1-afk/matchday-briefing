@@ -24,8 +24,8 @@ function mapStatus(apiStatus) {
   return Object.prototype.hasOwnProperty.call(STATUS_MAP, apiStatus) ? STATUS_MAP[apiStatus] : 'other';
 }
 
-// Per perspective, per match (SPEC.md §3.2).
-const TARGET_MIX = Object.freeze({ STAT: 2, BANTER: 3, HOT_TAKE: 3 });
+// Per perspective, per match (SPEC.md §3.2; Revision 20, the project owner's decision).
+const TARGET_MIX = Object.freeze({ STAT: 3, BANTER: 1, HOT_TAKE: 4 });
 
 const MIN_PASSING_COUNT = 4;
 const MAX_COMMENTS_PER_PERSPECTIVE = 8;
