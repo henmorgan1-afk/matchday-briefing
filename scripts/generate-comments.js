@@ -5,7 +5,7 @@
 const { COMMENT_TYPES, TARGET_MIX, MAX_COMMENTS_PER_PERSPECTIVE } = require('./lib/constants');
 const { complete, parseJsonReply } = require('./lib/ai-client');
 const { GENERATION_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
-const { normaliseDashes } = require('./lib/code-gate');
+const { normaliseDashes, promptTailProblems } = require('./lib/code-gate');
 
 const TEMPLATE = loadPrompt(GENERATION_PROMPT_FILE);
 
@@ -50,6 +50,9 @@ function toCandidate(item) {
 async function generateComments(matchData) {
   const problems = promptMixProblems();
   if (problems.length) throw new Error(`prompts/${GENERATION_PROMPT_FILE} disagrees with TARGET_MIX: ${problems.join('; ')}`);
+  // Revision 20: the code gate's banned tails must be the ones the prompt names.
+  const tails = promptTailProblems(TEMPLATE);
+  if (tails.length) throw new Error(`prompts/${GENERATION_PROMPT_FILE} disagrees with code-gate.js's PROMPT_TAILS: ${tails.join('; ')}`);
 
   const prompt = fillTemplate(TEMPLATE, {
     perspective_team_name: matchData.perspective_team,

@@ -147,6 +147,85 @@ function teamMixUps(text, names) {
   return problems;
 }
 
+// ---------------------------------------------------------------- wording rules (Revision 20)
+
+// A pattern matching any of the phrases as whole words, case-insensitively, longest first. Words may
+// be split by spaces or hyphens (`gap`); `plural` also matches an "s" or "es" ending.
+function phrasePattern(phrases, { gap = '[\\s-]+', plural = false } = {}) {
+  const alternatives = [...phrases].sort((a, b) => b.length - a.length)
+    .map((p) => p.split(/[\s-]+/).map(escapeRegExp).join(gap) + (plural ? '(?:e?s)?' : ''));
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives.join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+}
+
+// The tails the generation prompt names in "Never add a tail after a comma (...)". They fail anywhere
+// in a line or note, since the prompt also says never to borrow a reaction from it. promptTailProblems
+// keeps this list and the prompt in step.
+const PROMPT_TAILS = Object.freeze([
+  'win or lose', 'bless them', 'rough one', 'no sugar coating it', 'proper travelling support', 'whatever happens on the pitch',
+]);
+// Tails seen in dry runs that the prompt doesn't name. The prompt's general rule is "never add a tail
+// after a comma", so these fail only there (", rain or shine"), not as a sentence of their own.
+const EXTRA_TAILS = Object.freeze(['rain or shine', 'no contest']);
+const PROMPT_TAIL_PATTERN = phrasePattern(PROMPT_TAILS);
+const EXTRA_TAIL_PATTERN = new RegExp(`,\\s*(?:${phrasePattern(EXTRA_TAILS).source})`, 'giu');
+
+// The tails a prompt names, lower-cased, or null when it no longer has the list.
+function promptTails(template) {
+  const list = template.match(/Never add a tail after a comma\s*\(([^)]*)\)/);
+  return list ? [...list[1].matchAll(/"([^"]+)"/g)].map((q) => q[1].replace(/\s+/g, ' ').trim().toLowerCase()) : null;
+}
+
+// Startup check, like generate-comments.js's promptMixProblems: PROMPT_TAILS must be exactly the
+// tails the generation prompt names, so editing one without the other fails loudly.
+function promptTailProblems(template = loadPrompt(GENERATION_PROMPT_FILE)) {
+  const named = promptTails(template);
+  if (!named) return ['the prompt has no "Never add a tail after a comma (...)" list'];
+  return [
+    ...named.filter((t) => !PROMPT_TAILS.includes(t)).map((t) => `the prompt names the tail "${t}", which PROMPT_TAILS lacks`),
+    ...PROMPT_TAILS.filter((t) => !named.includes(t)).map((t) => `PROMPT_TAILS has "${t}", which the prompt doesn't name`),
+  ];
+}
+
+// Words that compare with other matches (checker rule E3: "other matches this season or in past
+// seasons ... trends that imply other matches", e.g. "finally clicking"). Only words that almost always
+// mean that. Left out: "all season", "this season" and "in a long while", because E3 passes a personal
+// superlative ("worst first half I've seen from us all season"); "again", because a second goal in the
+// same match is "again"; and "starting to", which also opens plain opinions ("Starting to think...").
+// BANTER is exempt: it may say how a club's fans habitually behave (B3).
+const OTHER_MATCH_TERMS = Object.freeze([
+  'finally', 'at last', 'for once', 'as usual', 'as always', 'as ever', 'once again', 'yet again',
+  'unbeaten', 'winning run', 'losing run', 'winning streak', 'losing streak',
+]);
+const OTHER_MATCH_PATTERN = phrasePattern(OTHER_MATCH_TERMS);
+
+// Words for a player's position (checker rule E9: "says what position a player plays", since
+// positions aren't in the match data). Only words for a person: a team unit ("our defence", "their
+// midfield") isn't a player's position. E9's own examples, "up top" and "at the back", are left out
+// because they describe a whole team just as often ("solid at the back").
+const POSITION_TERMS = Object.freeze([
+  'keeper', 'goalkeeper', 'goalie', 'defender', 'striker', 'midfielder', 'winger', 'full-back', 'centre-back',
+  'center-back', 'left-back', 'right-back', 'wing-back', 'centre-forward', 'centre-half', 'centre-halves',
+]);
+const POSITION_PATTERN = phrasePattern(POSITION_TERMS, { gap: '[\\s-]?', plural: true });
+
+const matchesOf = (pattern, text) => [...String(text ?? '').matchAll(pattern)].map((m) => m[0]);
+
+// Revision 20's wording rules for one line and its note: banned tails (every type), other-match words
+// (STAT and HOT_TAKE) and position words (every type).
+function wordingProblems({ type, text, note }) {
+  const problems = [];
+  for (const [where, s] of [['', text], ['note ', note]]) {
+    for (const t of [...matchesOf(PROMPT_TAIL_PATTERN, s), ...matchesOf(EXTRA_TAIL_PATTERN, s)]) {
+      problems.push(`${where}uses a banned tail, ${JSON.stringify(t.replace(/^,\s*/, ''))}`);
+    }
+    if (type !== 'BANTER') {
+      for (const t of matchesOf(OTHER_MATCH_PATTERN, s)) problems.push(`${where}compares with other matches (E3), ${JSON.stringify(t)}`);
+    }
+    for (const t of matchesOf(POSITION_PATTERN, s)) problems.push(`${where}names a player's position (E9), ${JSON.stringify(t)}`);
+  }
+  return problems;
+}
+
 // ---------------------------------------------------------------- copying the prompt (Revision 9)
 
 // A line that repeats this many words in a row from the generation prompt is copying it.
@@ -302,8 +381,9 @@ function allowedNumbers(matchData) {
 // Everything wrong with one line under the deterministic rules; an empty list means it passes.
 // STAT and HOT_TAKE numbers must be in the perspective's allowed set, BANTER may hold no number at all,
 // no type may contain a banned term, every player name must pass the name rules, neither the line nor
-// its note may say "our" before an opposition player's name, no line may repeat five words in a row
-// from the generation prompt, and no note may say "data". `names` comes from nameContext; it's
+// its note may say "our" before an opposition player's name, use a banned tail, a position word, or
+// (STAT and HOT_TAKE) an other-match word, no line may repeat five words in a row from the generation
+// prompt, and no note may say "data". `names` comes from nameContext; it's
 // required, so the name rules can't be skipped by leaving it out.
 function codeGateProblems({ type, text, note }, matchData, names) {
   if (!names?.nameIndex) throw new Error('codeGateProblems needs a name context (nameContext) for the name rules');
@@ -316,6 +396,7 @@ function codeGateProblems({ type, text, note }, matchData, names) {
   for (const term of bannedTermsIn(text)) problems.push(`contains banned term ${JSON.stringify(term)}`);
   problems.push(...nameProblems({ type, text }, names));
   problems.push(...teamMixUps(text, names), ...teamMixUps(note ?? '', names).map((p) => `note ${p}`));
+  problems.push(...wordingProblems({ type, text, note }));
   for (const stretch of copiedFromPrompt(text)) {
     problems.push(`repeats ${wordsOf(stretch).length} words in a row from the generation prompt, ${JSON.stringify(stretch)}`);
   }
@@ -334,6 +415,12 @@ module.exports = {
   namesIn,
   nameContext,
   teamMixUps,
+  PROMPT_TAILS,
+  EXTRA_TAILS,
+  OTHER_MATCH_TERMS,
+  POSITION_TERMS,
+  promptTailProblems,
+  wordingProblems,
   REUSABLE_PHRASES,
   buildPromptRuns,
   copiedFromPrompt,

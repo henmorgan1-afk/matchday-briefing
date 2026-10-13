@@ -149,7 +149,8 @@ async function main() {
   console.log(`PASS check-p1: match ${matchId} dry run (player_data ${match.player_data}) — ${totals.join(', ')} passing; ` +
     `every type and note valid; ${linesChecked} passing lines: STAT/HOT_TAKE numbers all in the match data, no numbers in BANTER, ` +
     `no banned terms, ${named.length} player names all with an event in the match (N1, N2), none under 18 outside STAT (N5), ` +
-    'none in BANTER, no five-word copies of the generation prompt, no banned note words, no two lines opening with the same ' +
+    'none in BANTER, no "our" before an opposition player, no banned tails, no other-match words in STAT or HOT_TAKE, ' +
+    'no position words, no five-word copies of the generation prompt, no banned note words, no two lines opening with the same ' +
     'three words across both sides; nothing written to Supabase');
 }
 
