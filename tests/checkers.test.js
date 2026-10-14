@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { blockNetwork, side, chelseaLines, usage } = require('./helpers');
 const { readVerdicts, secondCheck, safetyCheck, checkerPrompt, planGroqBatches } = require('../scripts/safety-check');
 const { secondCheckConfig } = require('../scripts/lib/second-checker');
-const { MINUTE_TOKEN_LIMIT } = require('../scripts/lib/groq-client');
+const { MINUTE_TOKEN_LIMIT, MAX_COMPLETION_TOKENS } = require('../scripts/lib/groq-client');
 
 blockNetwork();
 
@@ -69,8 +69,10 @@ test('second checker on Groq: every request fits the minute limit, splitting a s
   const out = await secondCheck(matchData, lines, { groq });
   assert.equal(out.verdicts.length, 8);
   assert.ok(out.verdicts.every((v) => v.result === 'pass'));
+  assert.equal(groq.requests.length, 2); // 8 lines go in two requests of 4, for the output limit
   for (const r of groq.requests) {
     assert.ok(r.opts.budgetTokens <= MINUTE_TOKEN_LIMIT, `budget ${r.opts.budgetTokens}`);
+    assert.ok(r.opts.maxCompletionTokens <= MAX_COMPLETION_TOKENS, `max ${r.opts.maxCompletionTokens}`);
     assert.equal(r.opts.model, 'qwen/qwen3.8-27b');
   }
   // A prompt too big for one request is split in halves.

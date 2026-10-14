@@ -32,6 +32,13 @@ const GROQ_MODEL = 'qwen/qwen3.8-27b';
 const GROQ_REASONING = Object.freeze({ reasoning_effort: 'none', reasoning_format: 'hidden' });
 
 const MINUTE_TOKEN_LIMIT = 8000;
+// Not in the published limits, found in the first round 4 dry run (15 Oct 2026): the free plan also
+// caps output at 1,000 tokens a minute ("output tokens per minute (OTPM): Limit 1000"), and refuses
+// outright a request whose expected output is over it. So no request asks for more than
+// MAX_COMPLETION_TOKENS, and output is paced over a sliding minute.
+const MINUTE_OUTPUT_TOKEN_LIMIT = 1000;
+const MAX_COMPLETION_TOKENS = 950;
+const MINUTE_MS = 60 * 1000;
 const REQUEST_TIMEOUT_MS = 60 * 1000;
 const MAX_RATE_RETRIES = 3;    // per-minute 429s, each after waiting its retry-after
 const MAX_OUTAGE_RETRIES = 3;  // 408, 5xx, network errors and timeouts, after about 2, 4 and 8 s
@@ -94,6 +101,7 @@ const saysPerDay = (body) => /per day|\bTPD\b|\bRPD\b|daily/i.test(body);
 const saysModelGone = (body) => /model_not_found|model_decommissioned|decommissioned|does not exist|not found|no longer supported/i.test(body);
 const saysJsonFailed = (body) => /json_validate_failed/i.test(body);
 const saysTooLarge = (body) => /request too large|too large for model|reduce your message size/i.test(body);
+const saysOutputPerMinute = (body) => /output tokens per minute|\bOTPM\b/i.test(body);
 
 // A client with its own pacing state. `fetch`, `sleep` and `now` can be replaced for offline tests.
 function createGroqClient({
@@ -105,6 +113,8 @@ function createGroqClient({
 } = {}) {
   // What the last reply's headers said, so the next call can wait if the minute budget is too low.
   let rate = { remainingTokens: undefined, tokensResetAt: undefined, remainingRequests: undefined };
+  // Output tokens of the calls in the last minute, as { at, tokens }, for the output limit.
+  let recentOutput = [];
   const stats = { calls: 0, inputTokens: 0, outputTokens: 0, waitedMs: 0, waits: 0 };
 
   const headers = () => {
@@ -160,6 +170,9 @@ function createGroqClient({
     if (budgetTokens > MINUTE_TOKEN_LIMIT) {
       throw new GroqError('failed', `request needs about ${budgetTokens} tokens, over Groq's ${MINUTE_TOKEN_LIMIT} a minute`);
     }
+    if (maxCompletionTokens > MAX_COMPLETION_TOKENS) {
+      throw new GroqError('failed', `request asks for ${maxCompletionTokens} output tokens, over the ${MAX_COMPLETION_TOKENS} each request may ask for (Groq's output limit is ${MINUTE_OUTPUT_TOKEN_LIMIT} a minute)`);
+    }
     const body = JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
@@ -174,6 +187,20 @@ function createGroqClient({
       if (rate.remainingTokens !== undefined && budgetTokens !== undefined && rate.remainingTokens < budgetTokens && rate.tokensResetAt > now()) {
         await wait(rate.tokensResetAt - now() + RESET_MARGIN_MS, `${rate.remainingTokens} tokens left this minute, this call needs about ${budgetTokens}`);
         rate = { ...rate, remainingTokens: undefined, tokensResetAt: undefined };
+      }
+      // The output limit: wait until the last minute's output plus this call's maximum fits.
+      recentOutput = recentOutput.filter((o) => o.at > now() - MINUTE_MS);
+      let used = recentOutput.reduce((sum, o) => sum + o.tokens, 0);
+      if (maxCompletionTokens !== undefined && used + maxCompletionTokens > MINUTE_OUTPUT_TOKEN_LIMIT) {
+        const why = `${used} output tokens in the last minute, this call may write ${maxCompletionTokens}`;
+        let until = now();
+        for (const o of recentOutput) {
+          used -= o.tokens;
+          until = o.at + MINUTE_MS;
+          if (used + maxCompletionTokens <= MINUTE_OUTPUT_TOKEN_LIMIT) break;
+        }
+        await wait(until - now() + RESET_MARGIN_MS, why);
+        recentOutput = recentOutput.filter((o) => o.at > now() - MINUTE_MS);
       }
 
       const { response, body: replyBody, networkError } = await request(GROQ_CHAT_URL, { method: 'POST', headers: headers(), body });
@@ -197,6 +224,7 @@ function createGroqClient({
         stats.calls += 1;
         stats.inputTokens += usage.input_tokens;
         stats.outputTokens += usage.output_tokens;
+        recentOutput.push({ at: now(), tokens: usage.output_tokens });
         const content = choice.message?.content;
         return {
           text: typeof content === 'string' ? content : '',
@@ -214,7 +242,11 @@ function createGroqClient({
         stats.calls += 1;
         return { text: '', stopReason: 'json_validate_failed', usage: { input_tokens: 0, output_tokens: 0 } };
       }
-      if (status === 413 || ((status === 400 || status === 429) && saysTooLarge(replyBody))) {
+      // A request within MAX_COMPLETION_TOKENS that Groq still calls too large for the output limit is
+      // waiting on the minute's output budget (Groq estimates a request's output its own way), so it's
+      // treated as a per-minute 429 below.
+      const outputMinute = status === 429 && saysOutputPerMinute(replyBody);
+      if (!outputMinute && (status === 413 || ((status === 400 || status === 429) && saysTooLarge(replyBody)))) {
         throw new GroqError('failed', `Groq refused the request as too large (HTTP ${status}): ${errorSummary(replyBody)}`, { status });
       }
       if (status === 429) {
@@ -222,7 +254,7 @@ function createGroqClient({
         if (rateRetries >= MAX_RATE_RETRIES) throw new GroqError('unavailable', `Groq still rate-limited after ${MAX_RATE_RETRIES} retries: ${errorSummary(replyBody)}`, { status });
         rateRetries += 1;
         const after = durationMs(response.headers.get('retry-after'));
-        await wait(Math.min(after ?? 10000, RETRY_AFTER_CAP_MS), `Groq answered 429 for the minute limit, retry ${rateRetries} of ${MAX_RATE_RETRIES}`);
+        await wait(Math.min(after ?? (outputMinute ? MINUTE_MS : 10000), RETRY_AFTER_CAP_MS), `Groq answered 429 for the minute ${outputMinute ? 'output ' : ''}limit, retry ${rateRetries} of ${MAX_RATE_RETRIES}`);
         rate = { ...rate, remainingTokens: undefined, tokensResetAt: undefined };
         continue;
       }
@@ -245,6 +277,8 @@ module.exports = {
   GROQ_MODEL,
   GROQ_REASONING,
   MINUTE_TOKEN_LIMIT,
+  MINUTE_OUTPUT_TOKEN_LIMIT,
+  MAX_COMPLETION_TOKENS,
   GroqError,
   createGroqClient,
   durationMs,

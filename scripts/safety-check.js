@@ -14,7 +14,7 @@ const { CHECK_MODEL, complete, parseJsonReply } = require('./lib/ai-client');
 const { SAFETY_CHECKER_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
 const { buildFactSheet } = require('./lib/fact-sheet');
 const { SECOND_CHECK } = require('./lib/second-checker');
-const { GROQ_REASONING, MINUTE_TOKEN_LIMIT, GroqError } = require('./lib/groq-client');
+const { GROQ_REASONING, MINUTE_TOKEN_LIMIT, MAX_COMPLETION_TOKENS, GroqError } = require('./lib/groq-client');
 
 const TEMPLATE = loadPrompt(SAFETY_CHECKER_PROMPT_FILE);
 
@@ -141,31 +141,32 @@ async function safetyCheck(matchData, candidates, { completeFn = complete } = {}
 // ---------------------------------------------------------------- the second checker
 
 // Groq's minute limit counts a request's input plus its max_completion_tokens, and refuses outright a
-// request bigger than the limit. Input is estimated from the prompt's length, at first conservatively,
-// then from the characters per token Groq reported for earlier calls.
+// request bigger than the limit. Its output limit (1,000 tokens a minute) caps each request's
+// max_completion_tokens at MAX_COMPLETION_TOKENS. A verdict took about 150 output tokens a line with
+// reasoning off (918 for 6 lines on 15 Oct 2026), so each line is given 190, which puts at most 4
+// lines in a request. Input is estimated from the prompt's length, at first conservatively, then from
+// the characters per token Groq reported for earlier calls.
 const GROQ_SAFETY_MARGIN = 300;
-const GROQ_COMPLETION_PER_LINE = 250;
-const GROQ_COMPLETION_BASE = GROQ_REASONING.reasoning_effort === 'none' ? 400 : 1500;
-const GROQ_MIN_COMPLETION = 800;
+const GROQ_COMPLETION_PER_LINE = 190;
+const GROQ_COMPLETION_BASE = GROQ_REASONING.reasoning_effort === 'none' ? 100 : 1500;
 let groqCharsPerToken = 3.0;
 
 const estimateTokens = (prompt) => Math.ceil(prompt.length / groqCharsPerToken);
 
 // Each batch of lines that fits one Groq request, with its prompt, estimate and max_completion_tokens.
-// A side's lines are split in halves until every batch fits.
+// A side's lines are split in halves until every batch fits both limits.
 function planGroqBatches(matchData, candidates) {
   const plan = (lines) => {
     const prompt = checkerPrompt(matchData, lines);
     const input = estimateTokens(prompt);
-    const room = MINUTE_TOKEN_LIMIT - GROQ_SAFETY_MARGIN - input;
+    const room = Math.min(MINUTE_TOKEN_LIMIT - GROQ_SAFETY_MARGIN - input, MAX_COMPLETION_TOKENS);
     const wanted = GROQ_COMPLETION_BASE + GROQ_COMPLETION_PER_LINE * lines.length;
     if (wanted <= room) return [{ lines, prompt, input, maxCompletionTokens: wanted }];
     if (lines.length > 1) {
       const half = Math.ceil(lines.length / 2);
       return [...plan(lines.slice(0, half)), ...plan(lines.slice(half))];
     }
-    if (room >= GROQ_MIN_COMPLETION) return [{ lines, prompt, input, maxCompletionTokens: room }];
-    throw new GroqError('failed', `one line's checker prompt is about ${input} tokens, too big for Groq's ${MINUTE_TOKEN_LIMIT} a minute`);
+    throw new GroqError('failed', `one line's checker request (about ${input} input tokens and ${wanted} output) doesn't fit Groq's limits`);
   };
   return plan(candidates);
 }
