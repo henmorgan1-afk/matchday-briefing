@@ -24,10 +24,12 @@ const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
 // Alibaba's Qwen: a different family from the first checker's gpt-oss. Groq lists it as Preview, so it
 // may be withdrawn at short notice; lib/second-checker.js can switch the second checker to Cloudflare.
 const GROQ_MODEL = 'qwen/qwen3.8-27b';
-// Reasoning on, at its lowest effort, with the reasoning text left out of the reply (Revision 21:
-// "low" if each call fits the minute limit, otherwise "none"). Hidden reasoning still counts as
-// completion tokens.
-const GROQ_REASONING = Object.freeze({ reasoning_effort: 'low', reasoning_format: 'hidden' });
+// Reasoning off (Revision 21: "low" if each call fits the minute limit, otherwise "none"). Measured on
+// 14 Oct 2026 with round 3's eight Bournemouth lines for 560595: the prompt was 3,550 input tokens, and
+// at "low" the model spent 3,225 hidden reasoning tokens and was cut off at 3,500 before its third
+// verdict, so a side's call can't fit 8,000 tokens a minute with reasoning on. reasoning_format stays
+// "hidden", which Groq requires with JSON mode.
+const GROQ_REASONING = Object.freeze({ reasoning_effort: 'none', reasoning_format: 'hidden' });
 
 const MINUTE_TOKEN_LIMIT = 8000;
 const REQUEST_TIMEOUT_MS = 60 * 1000;

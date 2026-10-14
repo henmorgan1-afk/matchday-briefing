@@ -44,7 +44,7 @@ test('reads Groq durations', () => {
   assert.equal(durationMs('soon'), undefined);
 });
 
-test('sends JSON mode, low hidden reasoning and max_completion_tokens to the chat endpoint', async () => {
+test('sends JSON mode, reasoning off (hidden) and max_completion_tokens to the chat endpoint', async () => {
   const { groq, requests } = client([reply()]);
   const out = await groq.complete('Return JSON', { maxCompletionTokens: 3000, budgetTokens: 6000 });
   const { url, init, body } = requests[0];
@@ -52,7 +52,7 @@ test('sends JSON mode, low hidden reasoning and max_completion_tokens to the cha
   assert.equal(init.headers.Authorization, 'Bearer test-key');
   assert.deepEqual(
     [body.model, body.response_format, body.reasoning_effort, body.reasoning_format, body.max_completion_tokens],
-    [GROQ_MODEL, { type: 'json_object' }, 'low', 'hidden', 3000],
+    [GROQ_MODEL, { type: 'json_object' }, 'none', 'hidden', 3000],
   );
   assert.deepEqual([out.text, out.usage.input_tokens, out.usage.output_tokens], ['{"1": {"result": "pass"}}', 3000, 900]);
 });
