@@ -10,31 +10,57 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env'), quiet
 const PROVIDERS = Object.freeze({
   // Both are judgment work, so both get the larger model (Revision 19). Checking a side's lines in one
   // call, rather than one call per line, keeps the stronger checker inside the free allowance.
+  // claimModel (Revision 21 idea 2) only lists each line's claims, which code then compares with the
+  // match data, so it's a cheap model with its reasoning off. secondCheckModel is the second checker's
+  // model only when lib/second-checker.js is switched from Groq to this provider.
   cloudflare: Object.freeze({
     generationModel: '@cf/openai/gpt-oss-120b',
     checkModel: '@cf/openai/gpt-oss-120b',
+    claimModel: '@cf/zai-org/glm-4.7-flash',
+    secondCheckModel: '@cf/google/gemma-4-26b-a4b-it',
   }),
-  // For running on the project owner's PC: no key, one model for both.
+  // For running on the project owner's PC: no key, one model for everything.
   ollama: Object.freeze({
     generationModel: 'gpt-oss:20b',
     checkModel: 'gpt-oss:20b',
+    claimModel: 'gpt-oss:20b',
+    secondCheckModel: 'gpt-oss:20b',
   }),
+});
+
+// Extra request fields per model, from each model's input schema on its Workers AI page (14 Oct 2026):
+// JSON object mode for the claim check and the fallback second checker, and GLM's reasoning turned off
+// (its chat template's enable_thinking, which defaults to true).
+const MODEL_REQUEST_OPTIONS = Object.freeze({
+  '@cf/zai-org/glm-4.7-flash': Object.freeze({
+    response_format: { type: 'json_object' },
+    chat_template_kwargs: { enable_thinking: false },
+  }),
+  '@cf/google/gemma-4-26b-a4b-it': Object.freeze({ response_format: { type: 'json_object' } }),
 });
 
 const PROVIDER = (process.env.AI_PROVIDER ?? '').trim().toLowerCase() || 'cloudflare';
 if (!Object.prototype.hasOwnProperty.call(PROVIDERS, PROVIDER)) {
   throw new Error(`AI_PROVIDER must be "cloudflare" or "ollama", not ${JSON.stringify(process.env.AI_PROVIDER)}`);
 }
-const { generationModel: GENERATION_MODEL, checkModel: CHECK_MODEL } = PROVIDERS[PROVIDER];
+const {
+  generationModel: GENERATION_MODEL,
+  checkModel: CHECK_MODEL,
+  claimModel: CLAIM_MODEL,
+  secondCheckModel: SECOND_CHECK_FALLBACK_MODEL,
+} = PROVIDERS[PROVIDER];
 
 const OLLAMA_URL = 'http://localhost:11434/v1/chat/completions';
 
 // Workers AI pricing page (13 Oct 2026): neurons per million tokens. The free allowance is 10,000
 // neurons a day, reset at 00:00 UTC; on the Workers Free plan, calls beyond it fail, never bill.
-// gpt-oss-20b is no longer used on Cloudflare (Revision 19); its rate stays for comparison.
+// gpt-oss-20b is no longer used on Cloudflare (Revision 19); its rate stays for comparison. The GLM and
+// Gemma rates are from Revision 21's brief (14 Oct 2026).
 const NEURONS_PER_MILLION_TOKENS = Object.freeze({
   '@cf/openai/gpt-oss-120b': Object.freeze({ input: 31818, output: 68182 }),
   '@cf/openai/gpt-oss-20b': Object.freeze({ input: 18182, output: 27273 }),
+  '@cf/zai-org/glm-4.7-flash': Object.freeze({ input: 5500, output: 36400 }),
+  '@cf/google/gemma-4-26b-a4b-it': Object.freeze({ input: 9091, output: 27273 }),
 });
 const FREE_NEURONS_PER_DAY = 10000;
 
@@ -119,7 +145,12 @@ async function postOnce({ url, headers }, model, prompt) {
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS }),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: MAX_TOKENS,
+        ...(PROVIDER === 'cloudflare' ? MODEL_REQUEST_OPTIONS[model] : undefined),
+      }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     ({ status, ok } = response);
@@ -221,8 +252,9 @@ function parseJsonReply(text) {
   }
 }
 
-// "cloudflare (generation @cf/openai/gpt-oss-120b, safety checks @cf/openai/gpt-oss-120b)"
-const AI_DESCRIPTION = `${PROVIDER} (generation ${GENERATION_MODEL}, safety checks ${CHECK_MODEL})`;
+// "cloudflare (generation @cf/openai/gpt-oss-120b, safety checks @cf/openai/gpt-oss-120b, claim check
+// @cf/zai-org/glm-4.7-flash)". The second checker is described by lib/second-checker.js.
+const AI_DESCRIPTION = `${PROVIDER} (generation ${GENERATION_MODEL}, safety checks ${CHECK_MODEL}, claim check ${CLAIM_MODEL})`;
 
 // The run's last line: its estimated neurons against the free daily allowance.
 function neuronSummary(neurons) {
@@ -236,6 +268,9 @@ module.exports = {
   PROVIDER,
   GENERATION_MODEL,
   CHECK_MODEL,
+  CLAIM_MODEL,
+  SECOND_CHECK_FALLBACK_MODEL,
+  MODEL_REQUEST_OPTIONS,
   AI_DESCRIPTION,
   NEURONS_PER_MILLION_TOKENS,
   FREE_NEURONS_PER_DAY,

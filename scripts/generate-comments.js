@@ -6,6 +6,7 @@ const { COMMENT_TYPES, TARGET_MIX, MAX_COMMENTS_PER_PERSPECTIVE } = require('./l
 const { complete, parseJsonReply } = require('./lib/ai-client');
 const { GENERATION_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
 const { normaliseDashes, promptTailProblems } = require('./lib/code-gate');
+const { buildFactSheet } = require('./lib/fact-sheet');
 
 const TEMPLATE = loadPrompt(GENERATION_PROMPT_FILE);
 
@@ -56,6 +57,7 @@ async function generateComments(matchData) {
 
   const prompt = fillTemplate(TEMPLATE, {
     perspective_team_name: matchData.perspective_team,
+    fact_sheet: buildFactSheet(matchData),
     match_data_json: matchDataJson(matchData),
   });
   const { text, stopReason, usage } = await complete(prompt);

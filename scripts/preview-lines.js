@@ -23,6 +23,7 @@ const { getServiceClient } = require('./lib/supabase-client');
 const { GENERATION_PROMPT_FILE, buildMatchData, fillTemplate, loadPrompt, matchDataJson } = require('./lib/match-data');
 const { codeGateProblems, openingWords, normaliseDashes } = require('./lib/code-gate');
 const { readPlayerData, readNameIndex, perspectiveNames } = require('./lib/player-data');
+const { buildFactSheet } = require('./lib/fact-sheet');
 const { COMMENT_TYPES } = require('./lib/constants');
 
 const USAGE = 'usage: node scripts/preview-lines.js --list | --match <id> [--check <file>]';
@@ -117,6 +118,7 @@ async function writePrompts(supabase, matchId) {
     // The same values generate-comments.js fills in.
     const prompt = fillTemplate(template, {
       perspective_team_name: matchData.perspective_team,
+      fact_sheet: buildFactSheet(matchData),
       match_data_json: matchDataJson(matchData),
     });
     const file = path.join(REVIEW_DIR, `preview-${match.id}-${side}.md`);

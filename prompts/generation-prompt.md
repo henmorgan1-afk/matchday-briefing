@@ -3,10 +3,14 @@ their team just played, so they can hold their own in casual chat without
 having watched it. Write from the perspective of a {{perspective_team_name}}
 fan reacting to this result.
 
-Match data:
+The facts to rely on, in plain English:
+{{fact_sheet}}
+
+Match data (the same facts, as JSON):
 {{match_data_json}}
 
-The match data above is everything that is known about this match. When
+The facts and match data above are everything that is known about this
+match. When
 "players" isn't null, it lists every player who scored, scored an own
 goal, was sent off, missed or saved a penalty, or made a save, with how
 many of each; "side" says whether they play for the perspective team or
@@ -66,8 +70,8 @@ Write exactly 8 comments in this mix:
   reaction of your own that makes no claim. Don't borrow a reaction from
   this prompt.
 - 1 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
-  match's specific events. No numbers or scorelines of any kind, not even
-  number words like "one" or "nil". It can say how a fixture, an atmosphere
+  match's specific events. No numbers or scorelines of any kind, in the
+  line or its note, not even number words like "one" or "nil". It can say how a fixture, an atmosphere
   or a club's fans feel or behave. It must not say anything about what
   happened on the pitch in past meetings, including style of play (no "we
   never do a routine 1-0", no "every fixture against them turns into a
@@ -93,8 +97,9 @@ Write exactly 8 comments in this mix:
   missed penalty), say which in the line or its note, and stay about that
   event. Saves, goals conceded and how busy a player was are never grounds
   for criticising a player. Never comment on a player's character, private life, looks,
-  nationality or injuries. Number words count as numbers ("one", "three")
-  and, like digits, must match the match data. Exaggerate for comedy only
+  nationality or injuries. No numbers at all, in the line or its note:
+  no digits and no number words ("one", "three", "six-goal"). Numbers
+  belong in STAT lines. Exaggerate for comedy only
   in football terms: never compare a performance to a crime, cheating or
   anything off the pitch.
 
@@ -116,7 +121,7 @@ Voice: a British fan texting a mate, not a pundit and not a reporter.
   most one comment.
 - Real idiom, used sparingly and only where it fits: "put in a shift",
   "game management", "backs against the wall", "second best all over the
-  pitch", "job done", "three points in the bank", "a game of two halves".
+  pitch", "job done".
 - Tone examples from other, made-up matches. Copy the tone, never the
   words: "Won ugly. Not complaining." (HOT_TAKE),
   "One-nil and a clean sheet. Tidy." (STAT).
@@ -138,5 +143,6 @@ note either (no "the keeper").
   nickname or song it uses ("The Black Cats is Sunderland's nickname").
 - HOT_TAKE: flag it as a strong take other fans might disagree with. If it
   criticises a named player, also say which of their events it's based on.
+- BANTER and HOT_TAKE notes have no numbers either, not even number words.
 
 Return JSON: a list of 8 objects, each { "type", "text", "note" }.

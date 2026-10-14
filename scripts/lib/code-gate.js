@@ -379,7 +379,8 @@ function allowedNumbers(matchData) {
 }
 
 // Everything wrong with one line under the deterministic rules; an empty list means it passes.
-// STAT and HOT_TAKE numbers must be in the perspective's allowed set, BANTER may hold no number at all,
+// STAT numbers must be in the perspective's allowed set; since Revision 21 (idea 3) HOT_TAKE and
+// BANTER may hold no number at all, in the line or in its note (BANTER's line rule is Revision 5's),
 // no type may contain a banned term, every player name must pass the name rules, neither the line nor
 // its note may say "our" before an opposition player's name, use a banned tail, a position word, or
 // (STAT and HOT_TAKE) an other-match word, no line may repeat five words in a row from the generation
@@ -388,10 +389,13 @@ function allowedNumbers(matchData) {
 function codeGateProblems({ type, text, note }, matchData, names) {
   if (!names?.nameIndex) throw new Error('codeGateProblems needs a name context (nameContext) for the name rules');
   const problems = [];
-  const allowed = type === 'BANTER' ? null : allowedNumbers(matchData);
+  const allowed = type === 'STAT' ? allowedNumbers(matchData) : null;
   for (const n of numbersIn(text)) {
-    if (type === 'BANTER') problems.push(`BANTER line contains a number, ${JSON.stringify(n.token)}`);
+    if (type !== 'STAT') problems.push(`${type} line contains a number, ${JSON.stringify(n.token)}; numbers belong in STAT lines`);
     else if (!allowed.has(n.value)) problems.push(`${type} line uses ${JSON.stringify(n.token)} (${n.value}), not in its match data`);
+  }
+  if (type !== 'STAT') {
+    for (const n of numbersIn(note ?? '')) problems.push(`${type} note contains a number, ${JSON.stringify(n.token)}; numbers belong in STAT lines`);
   }
   for (const term of bannedTermsIn(text)) problems.push(`contains banned term ${JSON.stringify(term)}`);
   problems.push(...nameProblems({ type, text }, names));

@@ -12,7 +12,8 @@
     "pipeline": "node scripts/run-pipeline.js",
     "check:p0": "node scripts/check-p0.js",
     "check:p1": "node scripts/check-p1.js",
-    "check:p2": "node scripts/check-p2.js"
+    "check:p2": "node scripts/check-p2.js",
+    "test:offline": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

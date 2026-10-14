@@ -28,7 +28,11 @@ function mapStatus(apiStatus) {
 const TARGET_MIX = Object.freeze({ STAT: 3, BANTER: 1, HOT_TAKE: 4 });
 
 const MIN_PASSING_COUNT = 4;
+// How many of a generation's candidates are checked; any beyond it fail as a format problem.
 const MAX_COMMENTS_PER_PERSPECTIVE = 8;
+// Revision 21: the most live lines a perspective may have. The model still writes 8, and the best
+// publishable ones are kept (lib/select-lines.js).
+const MAX_PUBLISHED_PER_PERSPECTIVE = 5;
 const MAX_GENERATION_ATTEMPTS = 2;
 
 // fetch-matches.js window, relative to today (SPEC.md §1).
@@ -54,6 +58,7 @@ module.exports = {
   TARGET_MIX,
   MIN_PASSING_COUNT,
   MAX_COMMENTS_PER_PERSPECTIVE,
+  MAX_PUBLISHED_PER_PERSPECTIVE,
   MAX_GENERATION_ATTEMPTS,
   FETCH_DAYS_BACK,
   FETCH_DAYS_AHEAD,

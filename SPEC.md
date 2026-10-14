@@ -1459,10 +1459,14 @@ their team just played, so they can hold their own in casual chat without
 having watched it. Write from the perspective of a {{perspective_team_name}}
 fan reacting to this result.
 
-Match data:
+The facts to rely on, in plain English:
+{{fact_sheet}}
+
+Match data (the same facts, as JSON):
 {{match_data_json}}
 
-The match data above is everything that is known about this match. When
+The facts and match data above are everything that is known about this
+match. When
 "players" isn't null, it lists every player who scored, scored an own
 goal, was sent off, missed or saved a penalty, or made a save, with how
 many of each; "side" says whether they play for the perspective team or
@@ -1522,8 +1526,8 @@ Write exactly 8 comments in this mix:
   reaction of your own that makes no claim. Don't borrow a reaction from
   this prompt.
 - 1 BANTER: generic, team/rivalry-flavoured chat that does NOT reference this
-  match's specific events. No numbers or scorelines of any kind, not even
-  number words like "one" or "nil". It can say how a fixture, an atmosphere
+  match's specific events. No numbers or scorelines of any kind, in the
+  line or its note, not even number words like "one" or "nil". It can say how a fixture, an atmosphere
   or a club's fans feel or behave. It must not say anything about what
   happened on the pitch in past meetings, including style of play (no "we
   never do a routine 1-0", no "every fixture against them turns into a
@@ -1549,8 +1553,9 @@ Write exactly 8 comments in this mix:
   missed penalty), say which in the line or its note, and stay about that
   event. Saves, goals conceded and how busy a player was are never grounds
   for criticising a player. Never comment on a player's character, private life, looks,
-  nationality or injuries. Number words count as numbers ("one", "three")
-  and, like digits, must match the match data. Exaggerate for comedy only
+  nationality or injuries. No numbers at all, in the line or its note:
+  no digits and no number words ("one", "three", "six-goal"). Numbers
+  belong in STAT lines. Exaggerate for comedy only
   in football terms: never compare a performance to a crime, cheating or
   anything off the pitch.
 
@@ -1572,7 +1577,7 @@ Voice: a British fan texting a mate, not a pundit and not a reporter.
   most one comment.
 - Real idiom, used sparingly and only where it fits: "put in a shift",
   "game management", "backs against the wall", "second best all over the
-  pitch", "job done", "three points in the bank", "a game of two halves".
+  pitch", "job done".
 - Tone examples from other, made-up matches. Copy the tone, never the
   words: "Won ugly. Not complaining." (HOT_TAKE),
   "One-nil and a clean sheet. Tidy." (STAT).
@@ -1594,6 +1599,7 @@ note either (no "the keeper").
   nickname or song it uses ("The Black Cats is Sunderland's nickname").
 - HOT_TAKE: flag it as a strong take other fans might disagree with. If it
   criticises a named player, also say which of their events it's based on.
+- BANTER and HOT_TAKE notes have no numbers either, not even number words.
 
 Return JSON: a list of 8 objects, each { "type", "text", "note" }.
 ```
@@ -1606,13 +1612,17 @@ data before they ship to a user. Check each comment on its own. Reject
 anything that could embarrass the user if challenged, using the rules for its
 declared type.
 
-Match data:
+The facts to rely on, in plain English:
+{{fact_sheet}}
+
+Match data (the same facts, as JSON):
 {{match_data_json}}
 
 Comments to check, keyed by number:
 {{comments_json}}
 
-The match data above is everything that is known about this match. When
+The facts and match data above are everything that is known about this
+match. When
 "players" isn't null, it lists every player who scored, scored an own
 goal, was sent off, missed or saved a penalty, or made a save, and
 "hooks" is worked out from that list. It has no information about anyone
@@ -1674,8 +1684,10 @@ Rules by type — check only the rules for the comment's declared type:
     doesn't match the match data.
 - HOT_TAKE (positive or enthusiastic opinions pass, however strong; strong
   criticism of performance alone is not a failure):
-  - H1: fail if any number, in digits or in words ("one", "three"),
-    doesn't match the match data.
+  - H1: fail if the comment or its note contains any number at all, in
+    digits or in words ("one", "three", "six-goal"), even one that
+    matches the match data: numbers belong in STAT lines. "One" in an
+    idiom such as "one of the best" or "no one" isn't a number.
   - H2: fail if it implies, in any phrasing and even hedged as opinion,
     that the team, any player or staff lacked effort, were dishonest or
     cheated, if it comments on a player's character, private life, looks,
@@ -1690,8 +1702,8 @@ Rules by type — check only the rules for the comment's declared type:
     was are never grounds: "Roefs barely got tested and still let five in"
     fails.
 - BANTER:
-  - B1: fail if it contains any number or scoreline of any kind, in digits
-    or in words (including "one" or "nil").
+  - B1: fail if the comment or its note contains any number or scoreline
+    of any kind, in digits or in words (including "one" or "nil").
   - B2: fail if it states a specific date or a named past incident.
   - B3: fail if it says anything about what happened on the pitch in past
     meetings, including style of play (e.g. "we never do a routine 1-0",
@@ -1712,13 +1724,88 @@ Rules by type — check only the rules for the comment's declared type:
 
 For each comment in turn, go through E1 to E10, then each rule for that
 comment's declared type, in order. Give each rule "pass" or "fail"; add a
-short reason only for a rule that fails, as "fail: <short reason>". A
-comment's overall result is "fail" if any of its rules failed, otherwise
-"pass".
+short reason only for a rule that fails, as "fail: <short reason>".
+
+If you can't tell whether a comment breaks a rule, or it's a borderline
+call, give that rule "unsure: <short reason>" instead. A comment with an
+unsure rule is never shown to anyone, so it costs nothing: never guess
+"pass". Only give "pass" when you're sure the comment keeps the rule.
+
+A comment's overall result is "fail" if any of its rules failed, otherwise
+"unsure" if any rule was unsure, otherwise "pass".
 
 Return only this JSON, with one entry per comment, keyed by its number, and
 in each one entry per rule you checked:
-{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}, "2": {...}, ...}
+{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail" | "unsure", "reason": "<short reason if it failed or was unsure, otherwise empty>"}, "2": {...}, ...}
+```
+
+**`prompts/claim-check-prompt.md`** (Revision 21; filled per side by `claim-check.js`, which never shows it the scores or counts):
+
+```
+You are reading short football comments written for a {{perspective_team_name}}
+fan about a match against {{opponent_team_name}}. Your job is to list every
+factual claim each comment and its note makes. Don't judge whether a claim is
+true: you haven't been given the score or any counts, and every claim you list
+will be checked separately. Report what the comment says, nothing more.
+
+Who is who:
+- "we", "us", "our" and "ours" mean {{perspective_team_name}}.
+- "they", "them", "their" and "theirs" mean {{opponent_team_name}}, unless the
+  comment plainly means someone else.
+- The only players a comment can name are these, each with the team they play
+  for:
+{{players_list}}
+
+Comments to read, keyed by number, each with its type, text and note:
+{{comments_json}}
+
+Read each comment's text and note together, and list every claim in them.
+
+1. A claim about a fact of this match gets one entry with these fields:
+   - "kind": one of goals_scored, goals_conceded, total_goals,
+     winning_margin, saves, red_card, own_goal, penalty_missed,
+     penalty_saved, score, half_time_score, result, points, clean_sheet,
+     home_or_away, came_from_behind, date, matchday.
+   - "team": "us", "them" or "match" (both teams together). For a player's
+     claim, the team the comment says the player is on.
+   - "player": the player's name exactly as listed above, or null.
+   - "period": "full_time", "first_half" or "second_half" for a claim about
+     goals, a score or a margin; null for anything else. "At the break" and
+     "at half-time" mean first_half.
+   - "value": what the comment says, with every number as digits:
+     - goals_scored, goals_conceded, total_goals, winning_margin, saves,
+       red_card, own_goal, penalty_missed, penalty_saved, points and
+       matchday: a whole number. A brace is 2, a hat-trick 3, a lone goal 1,
+       "sent off" is a red_card of 1, and "two up" is a winning_margin of 2.
+     - score and half_time_score: {"us": <our goals>, "them": <their goals>},
+       whichever order the comment writes them in.
+     - result: "won", "drew" or "lost", for the team in "team".
+     - clean_sheet and came_from_behind: true or false, for the team in
+       "team".
+     - home_or_away: "home" or "away", for the team in "team".
+     - date: the day or date as the comment writes it, such as "Saturday".
+   - "quote": the words that make the claim.
+   For goals_conceded, "team" is the team that let the goals in. For
+   own_goal, "team" is the team of the player who put the ball into his own
+   net. For winning_margin, "team" is the team that was ahead.
+
+2. A factual claim that the match details could never show gets one entry
+   with "kind": "unverifiable" and a "quote". For example: an assist; when or
+   in what order goals went in, beyond which half; how a goal was scored or
+   what it looked like; a penalty goal; what position a player plays; a
+   yellow card; a substitution; an injury; a venue, stadium or ground name;
+   the league table; form; or any other match.
+
+3. Club culture, such as a nickname, a song or how fans behave, gets one
+   entry with "kind": "culture" and a "quote".
+
+4. An opinion or a reaction ("a shocker", "brilliant", "our defence looked
+   like a sieve") gets one entry with "kind": "opinion" and a "quote". When
+   an opinion also states a fact ("a relentless six-goal blitz"), list the
+   fact as its own entry too.
+
+Return only this JSON, with one entry per comment, keyed by its number:
+{"1": {"claims": [{"kind": "...", "team": "...", "player": null, "period": null, "value": ..., "quote": "..."}, ...]}, "2": {"claims": []}, ...}
 ```
 
 ### 3.5 Match data sent to the model (`scripts/lib/match-data.js`)

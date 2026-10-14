@@ -3,13 +3,17 @@ data before they ship to a user. Check each comment on its own. Reject
 anything that could embarrass the user if challenged, using the rules for its
 declared type.
 
-Match data:
+The facts to rely on, in plain English:
+{{fact_sheet}}
+
+Match data (the same facts, as JSON):
 {{match_data_json}}
 
 Comments to check, keyed by number:
 {{comments_json}}
 
-The match data above is everything that is known about this match. When
+The facts and match data above are everything that is known about this
+match. When
 "players" isn't null, it lists every player who scored, scored an own
 goal, was sent off, missed or saved a penalty, or made a save, and
 "hooks" is worked out from that list. It has no information about anyone
@@ -71,8 +75,10 @@ Rules by type — check only the rules for the comment's declared type:
     doesn't match the match data.
 - HOT_TAKE (positive or enthusiastic opinions pass, however strong; strong
   criticism of performance alone is not a failure):
-  - H1: fail if any number, in digits or in words ("one", "three"),
-    doesn't match the match data.
+  - H1: fail if the comment or its note contains any number at all, in
+    digits or in words ("one", "three", "six-goal"), even one that
+    matches the match data: numbers belong in STAT lines. "One" in an
+    idiom such as "one of the best" or "no one" isn't a number.
   - H2: fail if it implies, in any phrasing and even hedged as opinion,
     that the team, any player or staff lacked effort, were dishonest or
     cheated, if it comments on a player's character, private life, looks,
@@ -87,8 +93,8 @@ Rules by type — check only the rules for the comment's declared type:
     was are never grounds: "Roefs barely got tested and still let five in"
     fails.
 - BANTER:
-  - B1: fail if it contains any number or scoreline of any kind, in digits
-    or in words (including "one" or "nil").
+  - B1: fail if the comment or its note contains any number or scoreline
+    of any kind, in digits or in words (including "one" or "nil").
   - B2: fail if it states a specific date or a named past incident.
   - B3: fail if it says anything about what happened on the pitch in past
     meetings, including style of play (e.g. "we never do a routine 1-0",
@@ -109,10 +115,16 @@ Rules by type — check only the rules for the comment's declared type:
 
 For each comment in turn, go through E1 to E10, then each rule for that
 comment's declared type, in order. Give each rule "pass" or "fail"; add a
-short reason only for a rule that fails, as "fail: <short reason>". A
-comment's overall result is "fail" if any of its rules failed, otherwise
-"pass".
+short reason only for a rule that fails, as "fail: <short reason>".
+
+If you can't tell whether a comment breaks a rule, or it's a borderline
+call, give that rule "unsure: <short reason>" instead. A comment with an
+unsure rule is never shown to anyone, so it costs nothing: never guess
+"pass". Only give "pass" when you're sure the comment keeps the rule.
+
+A comment's overall result is "fail" if any of its rules failed, otherwise
+"unsure" if any rule was unsure, otherwise "pass".
 
 Return only this JSON, with one entry per comment, keyed by its number, and
 in each one entry per rule you checked:
-{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail", "reason": "<short reason if it failed, otherwise empty>"}, "2": {...}, ...}
+{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail" | "unsure", "reason": "<short reason if it failed or was unsure, otherwise empty>"}, "2": {...}, ...}
