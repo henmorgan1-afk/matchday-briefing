@@ -23,7 +23,8 @@ Read each comment's text and note together, and list every claim in them.
      penalty_saved, score, half_time_score, result, points, clean_sheet,
      home_or_away, came_from_behind, date, matchday.
    - "team": "us", "them" or "match" (both teams together). For a player's
-     claim, the team the comment says the player is on.
+     claim, the team the comment says the player is on ("our Martinez" is
+     "us"), or null when the comment doesn't say which team.
    - "player": the player's name exactly as listed above, or null.
    - "period": "full_time", "first_half" or "second_half" for a claim about
      goals, a score or a margin; null for anything else. "At the break" and
@@ -33,6 +34,8 @@ Read each comment's text and note together, and list every claim in them.
        red_card, own_goal, penalty_missed, penalty_saved, points and
        matchday: a whole number. A brace is 2, a hat-trick 3, a lone goal 1,
        "sent off" is a red_card of 1, and "two up" is a winning_margin of 2.
+       When the comment gives no number ("his saves", "their goals"), use
+       null: it is checked as at least one. Never guess a number.
      - score and half_time_score: {"us": <our goals>, "them": <their goals>},
        whichever order the comment writes them in.
      - result: "won", "drew" or "lost", for the team in "team".
@@ -41,9 +44,12 @@ Read each comment's text and note together, and list every claim in them.
      - home_or_away: "home" or "away", for the team in "team".
      - date: the day or date as the comment writes it, such as "Saturday".
    - "quote": the words that make the claim.
-   For goals_conceded, "team" is the team that let the goals in. For
-   own_goal, "team" is the team of the player who put the ball into his own
-   net. For winning_margin, "team" is the team that was ahead.
+   goals_scored is one team's goals, total_goals is both teams' goals added
+   together, and for goals_conceded "team" is the team that let the goals
+   in. So "we lost 4-2" is goals_scored 2 and goals_conceded 4 for "us", and
+   "four goals at home" from us is goals_scored 4 for "us". For own_goal,
+   "team" is the team of the player who put the ball into his own net. For
+   winning_margin, "team" is the team that was ahead.
 
 2. A factual claim that the match details could never show gets one entry
    with "kind": "unverifiable" and a "quote". For example: an assist; when or

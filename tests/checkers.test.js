@@ -69,7 +69,7 @@ test('second checker on Groq: every request fits the minute limit, splitting a s
   const out = await secondCheck(matchData, lines, { groq });
   assert.equal(out.verdicts.length, 8);
   assert.ok(out.verdicts.every((v) => v.result === 'pass'));
-  assert.equal(groq.requests.length, 2); // 8 lines go in two requests of 4, for the output limit
+  assert.equal(groq.requests.length, 3); // 8 lines go in requests of 3, 3 and 2, for the output limit
   for (const r of groq.requests) {
     assert.ok(r.opts.budgetTokens <= MINUTE_TOKEN_LIMIT, `budget ${r.opts.budgetTokens}`);
     assert.ok(r.opts.maxCompletionTokens <= MAX_COMPLETION_TOKENS, `max ${r.opts.maxCompletionTokens}`);

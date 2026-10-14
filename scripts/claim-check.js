@@ -131,6 +131,14 @@ function compareClaim(claim, md) {
   const said = JSON.stringify(value);
   const differ = (actual) => bad(`says ${said}, the match data says ${JSON.stringify(actual)}`);
   const needTeam = () => (team === 'us' || team === 'them' ? null : bad(`needs team "us" or "them", got ${JSON.stringify(claim.team)}`));
+  // A count of goals or events: a whole number must equal the data; null, for a count the line gives
+  // no number for ("his saves"), means at least one.
+  const count = (actual) => {
+    if (value === null || value === undefined) return actual >= 1 ? { ok: true } : bad(`says there were some, the match data says ${actual}`);
+    const n = wholeNumber(value);
+    if (n === undefined) return bad(`value ${said} isn't a whole number`);
+    return n === actual ? { ok: true } : differ(actual);
+  };
 
   // A player's own events: compared with that player's counts, full time only.
   const playerName = typeof claim.player === 'string' && claim.player.trim() ? claim.player.trim() : null;
@@ -143,10 +151,7 @@ function compareClaim(claim, md) {
     const event = PLAYER_EVENT[kind];
     if (!event) return bad(`a ${kind} claim about one player can't be compared`);
     if (period && period !== 'full_time') return bad(`${player.name}'s goals by half aren't known`);
-    const n = wholeNumber(value);
-    if (n === undefined) return bad(`value ${said} isn't a whole number`);
-    const actual = player.events[event] ?? 0;
-    return n === actual ? { ok: true } : differ(actual);
+    return count(player.events[event] ?? 0);
   }
 
   switch (kind) {
@@ -155,16 +160,10 @@ function compareClaim(claim, md) {
     case 'total_goals': {
       const goals = goalsIn(md, period ?? 'full_time');
       if (!goals) return bad(`goals in the ${period.replace('_', ' ')} aren't known`);
-      const n = wholeNumber(value);
-      if (n === undefined) return bad(`value ${said} isn't a whole number`);
-      let actual;
-      if (kind === 'total_goals' || team === 'match') actual = goals.us + goals.them;
-      else {
-        const missing = needTeam();
-        if (missing) return missing;
-        actual = kind === 'goals_scored' ? goals[team] : goals[otherTeam(team)];
-      }
-      return n === actual ? { ok: true } : differ(actual);
+      if (kind === 'total_goals' || team === 'match') return count(goals.us + goals.them);
+      const missing = needTeam();
+      if (missing) return missing;
+      return count(kind === 'goals_scored' ? goals[team] : goals[otherTeam(team)]);
     }
     case 'winning_margin': {
       const goals = goalsIn(md, period ?? 'full_time');
@@ -245,10 +244,7 @@ function compareClaim(claim, md) {
       const missing = needTeam();
       if (missing) return missing;
       if (period && period !== 'full_time') return bad('events by half aren\'t known');
-      const n = wholeNumber(value);
-      if (n === undefined) return bad(`value ${said} isn't a whole number`);
-      const actual = teamEventTotal(md, team, PLAYER_EVENT[kind]);
-      return n === actual ? { ok: true } : differ(actual);
+      return count(teamEventTotal(md, team, PLAYER_EVENT[kind]));
     }
   }
 }

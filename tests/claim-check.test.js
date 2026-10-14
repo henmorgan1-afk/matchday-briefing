@@ -51,6 +51,15 @@ test('a player put on the wrong team fails ("our Martinez" from Bournemouth)', (
   const r = compareLine({ claims: [claim('saves', 'us', 3, { player: 'Martinez' })] }, away, 'STAT');
   assert.equal(r.result, 'fail');
   assert.match(r.reason, /plays for Chelsea/);
+  // A line that doesn't say which team ("Martinez made three saves") isn't checked for one.
+  assert.equal(compareLine({ claims: [claim('saves', null, 3, { player: 'Martinez' })] }, away, 'STAT').result, 'pass');
+});
+
+test('a count with no number ("his saves") is checked as at least one', () => {
+  assert.equal(compareLine({ claims: [claim('saves', null, null, { player: 'Martinez' })] }, home, 'HOT_TAKE').result, 'pass');
+  assert.equal(compareLine({ claims: [claim('goals_conceded', 'them', null)] }, home, 'HOT_TAKE').result, 'pass');
+  assert.equal(compareLine({ claims: [claim('red_card', 'us', null)] }, home, 'HOT_TAKE').result, 'fail');
+  assert.equal(compareLine({ claims: [claim('goals_scored', 'us', null, { player: 'Martinez' })] }, home, 'HOT_TAKE').result, 'fail');
 });
 
 test('unverifiable fails; culture and opinion pass without counting', () => {

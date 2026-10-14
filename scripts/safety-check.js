@@ -143,19 +143,31 @@ async function safetyCheck(matchData, candidates, { completeFn = complete } = {}
 // Groq's minute limit counts a request's input plus its max_completion_tokens, and refuses outright a
 // request bigger than the limit. Its output limit (1,000 tokens a minute) caps each request's
 // max_completion_tokens at MAX_COMPLETION_TOKENS. A verdict took about 150 output tokens a line with
-// reasoning off (918 for 6 lines on 15 Oct 2026), so each line is given 190, which puts at most 4
-// lines in a request. Input is estimated from the prompt's length, at first conservatively, then from
-// the characters per token Groq reported for earlier calls.
+// reasoning off when every rule passed (918 for 6 lines on 15 Oct 2026), and a 4-line request given
+// 860 ran out when some verdicts carried reasons. So each line is given 250, which puts at most 3
+// lines in a request, and a side's lines are shared evenly between as few requests as that allows.
+// Input is estimated from the prompt's length, at first conservatively, then from the characters
+// per token Groq reported for earlier calls.
 const GROQ_SAFETY_MARGIN = 300;
-const GROQ_COMPLETION_PER_LINE = 190;
+const GROQ_COMPLETION_PER_LINE = 250;
 const GROQ_COMPLETION_BASE = GROQ_REASONING.reasoning_effort === 'none' ? 100 : 1500;
+const GROQ_LINES_PER_REQUEST = Math.max(1, Math.floor((MAX_COMPLETION_TOKENS - GROQ_COMPLETION_BASE) / GROQ_COMPLETION_PER_LINE));
 let groqCharsPerToken = 3.0;
 
 const estimateTokens = (prompt) => Math.ceil(prompt.length / groqCharsPerToken);
 
 // Each batch of lines that fits one Groq request, with its prompt, estimate and max_completion_tokens.
-// A side's lines are split in halves until every batch fits both limits.
+// A side's lines are shared evenly between ceil(n / GROQ_LINES_PER_REQUEST) batches, and any batch
+// still too big for the minute's tokens is split in halves.
 function planGroqBatches(matchData, candidates) {
+  const batches = Math.ceil(candidates.length / GROQ_LINES_PER_REQUEST);
+  const size = Math.ceil(candidates.length / batches);
+  const chunks = [];
+  for (let i = 0; i < candidates.length; i += size) chunks.push(candidates.slice(i, i + size));
+  return chunks.flatMap((chunk) => planChunk(matchData, chunk));
+}
+
+function planChunk(matchData, candidates) {
   const plan = (lines) => {
     const prompt = checkerPrompt(matchData, lines);
     const input = estimateTokens(prompt);
