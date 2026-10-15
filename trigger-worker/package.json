@@ -1,0 +1,14 @@
+{
+  "name": "ludicrous-display-trigger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker cron that starts .github/workflows/pipeline.yml every hour (SPEC.md Revision 22)",
+  "type": "module",
+  "scripts": {
+    "test:offline": "node --test \"test/*.test.js\"",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.148.0"
+  }
+}

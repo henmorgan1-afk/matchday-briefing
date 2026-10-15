@@ -1,4 +1,6 @@
 .env
 node_modules/
+.wrangler/
+.dev.vars
 review/
 .claude/settings.local.json
