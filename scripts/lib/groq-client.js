@@ -165,7 +165,7 @@ function createGroqClient({
   // One chat completion in JSON object mode. `budgetTokens` is the request's input estimate plus its
   // max_completion_tokens: if the last headers said the minute budget is lower, it waits for the reset.
   // Returns { text, stopReason, usage }; a reply that failed Groq's JSON validation comes back with
-  // empty text, so the caller fails its lines closed.
+  // empty text, so the caller asks about its lines once more and then fails them closed (Revision 24).
   async function complete(prompt, { model = GROQ_MODEL, maxCompletionTokens, budgetTokens } = {}) {
     if (budgetTokens > MINUTE_TOKEN_LIMIT) {
       throw new GroqError('failed', `request needs about ${budgetTokens} tokens, over Groq's ${MINUTE_TOKEN_LIMIT} a minute`);

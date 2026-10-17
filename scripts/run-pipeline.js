@@ -198,7 +198,7 @@ async function runAttempt(matchData, names, stats, deps) {
     } else {
       for (const call of second.calls) addUsage(stats, SECOND_CHECK.model, call.usage);
     }
-    out.second_check = { checker: SECOND_CHECK.name, calls: second.calls, usage: second.usage, problem: second.problem };
+    out.second_check = { checker: SECOND_CHECK.name, calls: second.calls, usage: second.usage, problem: second.problem, retried: second.retried ?? [] };
     lines.forEach((c, i) => {
       const verdict = second.verdicts[i];
       c.second_rule_checks = verdict.rules;

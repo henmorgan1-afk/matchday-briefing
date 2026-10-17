@@ -7,8 +7,9 @@
 //
 // The same prompt runs twice (Revision 21 idea 4): safetyCheck is the first checker (CHECK_MODEL, on
 // every well-formed line), and secondCheck the second checker (lib/second-checker.js: Groq by default),
-// on the lines that passed every earlier step. A line goes live only if both pass it. Called by
-// run-pipeline.js; has no CLI of its own.
+// on the lines that passed every earlier step. A line goes live only if both pass it. Since Revision
+// 24 the second checker on Groq asks once more about any line it got no readable verdict for, before
+// failing it closed. Called by run-pipeline.js; has no CLI of its own.
 
 const { CHECK_MODEL, complete, parseJsonReply } = require('./lib/ai-client');
 const { SAFETY_CHECKER_PROMPT_FILE, loadPrompt, fillTemplate, matchDataJson } = require('./lib/match-data');
@@ -66,8 +67,16 @@ function judge(verdict) {
     return { result: 'unsure', reason: which || reason || '(checker gave no reason)', rules };
   }
   if (result === 'pass') return { result: 'pass', reason, rules };
-  return { result: 'fail', reason: `checker returned result ${JSON.stringify(verdict.result)}, not "pass", "fail" or "unsure"`, rules };
+  // No readable overall result (Revision 23 saw two from Groq). A failed rule still fails the line;
+  // otherwise the verdict is unreadable, which fails it too, and the second checker on Groq asks again
+  // once (Revision 24).
+  if (failedRule) return { result: 'fail', reason: `no readable overall result, but rule "${failedRule.rule}" failed: ${failedRule.reason}`, rules };
+  return { result: 'fail', unreadable: true, reason: `checker returned result ${JSON.stringify(verdict.result)}, not "pass", "fail" or "unsure"`, rules };
 }
+
+// A verdict that failed because nothing readable came back for its line: a missing or unreadable
+// verdict, a reply that wasn't JSON, or no readable overall result with no failed rule.
+const isUnreadable = (v) => v.result === 'fail' && (v.unreadable === true || v.rules === undefined);
 
 // A line number from a key such as "3", "line 3" or "#3"; null for anything else, rule ids included.
 function lineNumber(key) {
@@ -125,7 +134,7 @@ function checkerPrompt(matchData, candidates) {
 
 // Lines with no readable verdict, as a problem string for logs and review, or null.
 function unreadProblem(verdicts) {
-  const unread = verdicts.map((v, i) => (v.rules === undefined && v.result === 'fail' ? i + 1 : null)).filter((n) => n !== null);
+  const unread = verdicts.map((v, i) => (isUnreadable(v) ? i + 1 : null)).filter((n) => n !== null);
   return unread.length ? `no readable verdict for line${unread.length > 1 ? 's' : ''} ${unread.join(', ')}: ${verdicts[unread[0] - 1].reason}` : null;
 }
 
@@ -185,39 +194,64 @@ function planChunk(matchData, candidates) {
 
 // The second checker. `deps.groq` is a lib/groq-client.js client (used when the second checker is on
 // Groq); `deps.completeFn` is ai-client's complete (used when it's on Cloudflare). Returns
-// { verdicts, calls, usage, problem }: verdicts line up with `candidates`, and calls holds each
-// request's stop reason, usage, problem and (when a line had no readable verdict) raw reply.
+// { verdicts, calls, usage, problem, retried }: verdicts line up with `candidates`, calls holds each
+// request's stop reason, usage, problem and (when a line had no readable verdict) raw reply, and
+// retried lists the lines (numbered from 1) Groq was asked about a second time.
+//
+// Revision 24: on Groq, a line with no readable verdict (the reply wasn't JSON, Groq's
+// json_validate_failed included, its verdict was missing or unreadable, or it had no readable overall
+// result and no failed rule) is asked about once more, in new requests holding only those lines,
+// paced like any other. A refusal isn't retried. A line still unreadable after the retry fails closed.
 async function secondCheck(matchData, candidates, { groq, completeFn = complete, config = SECOND_CHECK } = {}) {
   const usage = { input_tokens: 0, output_tokens: 0, neurons: 0 };
   const calls = [];
-  const verdicts = [];
   const record = (lines, text, stopReason, callUsage, extra = {}) => {
     const vs = readVerdicts(text, stopReason, lines.length);
     const problem = unreadProblem(vs);
-    verdicts.push(...vs);
     usage.input_tokens += callUsage.input_tokens;
     usage.output_tokens += callUsage.output_tokens;
     usage.neurons += callUsage.neurons ?? 0;
     calls.push({ lines: lines.length, stop_reason: stopReason, usage: callUsage, ...extra, problem, raw_text: problem ? text : undefined });
+    return vs;
   };
 
-  if (config.provider === 'groq') {
-    if (!groq) throw new Error('secondCheck needs a Groq client');
-    for (const batch of planGroqBatches(matchData, candidates)) {
+  if (config.provider !== 'groq') {
+    const reply = await completeFn(checkerPrompt(matchData, candidates), { model: config.model });
+    const verdicts = record(candidates, reply.text, reply.stopReason, reply.usage);
+    return { verdicts, calls, usage, problem: calls[0].problem, retried: [] };
+  }
+
+  if (!groq) throw new Error('secondCheck needs a Groq client');
+  // Asks Groq about the candidates at `indices`, in as many requests as the limits need. Returns
+  // { index, verdict, refused } for each, in order.
+  const ask = async (indices, extra = {}) => {
+    const out = [];
+    let at = 0;
+    for (const batch of planGroqBatches(matchData, indices.map((i) => candidates[i]))) {
       const reply = await groq.complete(batch.prompt, {
         model: config.model,
         maxCompletionTokens: batch.maxCompletionTokens,
         budgetTokens: batch.input + batch.maxCompletionTokens,
       });
       if (reply.usage.input_tokens > 0) groqCharsPerToken = Math.min(groqCharsPerToken, (batch.prompt.length / reply.usage.input_tokens) * 0.95);
-      record(batch.lines, reply.text, reply.stopReason, reply.usage, { estimated_input_tokens: batch.input, max_completion_tokens: batch.maxCompletionTokens });
+      const vs = record(batch.lines, reply.text, reply.stopReason, reply.usage, { ...extra, estimated_input_tokens: batch.input, max_completion_tokens: batch.maxCompletionTokens });
+      vs.forEach((verdict) => { out.push({ index: indices[at], verdict, refused: reply.stopReason === 'refusal' }); at += 1; });
     }
-  } else {
-    const reply = await completeFn(checkerPrompt(matchData, candidates), { model: config.model });
-    record(candidates, reply.text, reply.stopReason, reply.usage);
+    return out;
+  };
+
+  const verdicts = [];
+  const firstTry = await ask(candidates.map((_, i) => i));
+  for (const r of firstTry) verdicts[r.index] = r.verdict;
+  const retried = firstTry.filter((r) => !r.refused && isUnreadable(r.verdict)).map((r) => r.index);
+  if (retried.length) {
+    for (const r of await ask(retried, { retry: true })) {
+      verdicts[r.index] = isUnreadable(r.verdict) ? { ...r.verdict, reason: `still no readable verdict after a retry: ${r.verdict.reason}` } : r.verdict;
+    }
   }
-  const problem = calls.map((c) => c.problem).filter(Boolean).join(' | ') || null;
-  return { verdicts, calls, usage, problem };
+  const problems = calls.map((c) => `${c.retry ? 'retry: ' : ''}${c.problem ?? ''}`).filter((p) => p && p !== 'retry: ');
+  if (retried.length) problems.push(`asked again about line${retried.length > 1 ? 's' : ''} ${retried.map((i) => i + 1).join(', ')}; ${retried.some((i) => isUnreadable(verdicts[i])) ? 'some still had no readable verdict, so they fail' : 'every one had a readable verdict the second time'}`);
+  return { verdicts, calls, usage, problem: problems.join(' | ') || null, retried: retried.map((i) => i + 1) };
 }
 
 module.exports = { safetyCheck, secondCheck, readVerdicts, judge, checkerPrompt, planGroqBatches };
