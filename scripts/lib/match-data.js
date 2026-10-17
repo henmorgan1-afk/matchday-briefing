@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { TARGET_MIX } = require('./constants');
+const { TARGET_MIX, CLAIM_CHECK_ENABLED } = require('./constants');
 const { PROVIDER, GENERATION_MODEL, CHECK_MODEL, CLAIM_MODEL } = require('./ai-client');
 const { SECOND_CHECK } = require('./second-checker');
 
@@ -196,8 +196,9 @@ function fillTemplate(template, values) {
 
 // First 8 hex characters of SHA-256 over the generation and checker prompts, TARGET_MIX, the AI
 // provider with its model IDs (Revision 18), and since Revision 21 the claim-check prompt, the claim
-// model and the second checker's provider and model, NUL-separated. So switching any prompt,
-// provider or model changes the version too.
+// model and the second checker's provider and model, and since Revision 24 whether the claim check
+// is on, NUL-separated. So switching any prompt, provider, model or the claim check changes the
+// version too.
 function computePromptVersion() {
   const hash = crypto.createHash('sha256');
   hash.update(loadPrompt(GENERATION_PROMPT_FILE));
@@ -211,6 +212,9 @@ function computePromptVersion() {
   hash.update(loadPrompt(CLAIM_CHECK_PROMPT_FILE));
   hash.update('\0');
   hash.update(JSON.stringify({ claim: CLAIM_MODEL, second_check: { provider: SECOND_CHECK.provider, model: SECOND_CHECK.model } }));
+  // Revision 24: whether the claim check runs, since switching it changes which lines go live.
+  hash.update('\0');
+  hash.update(JSON.stringify({ claim_check_enabled: CLAIM_CHECK_ENABLED }));
   return hash.digest('hex').slice(0, 8);
 }
 

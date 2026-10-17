@@ -3,14 +3,16 @@
 // MAX_PUBLISHED_PER_PERSPECTIVE live lines. When more are publishable than there are places left,
 // types take turns: HOT_TAKE, STAT, BANTER, then round again, so a side gets at least one STAT and one
 // HOT_TAKE where possible. Within a type, the line with the fewest checked claims comes first, then
-// the order the model wrote them. Lines already live count towards the turns, so a second attempt
-// fills only the places left and keeps the spread.
+// the order the model wrote them. With the claim check off (Revision 24, CLAIM_CHECK_ENABLED) no line
+// has a count, so the order written decides. Lines already live count towards the turns, so a second
+// attempt fills only the places left and keeps the spread.
 
 const TURN_ORDER = Object.freeze(['HOT_TAKE', 'STAT', 'BANTER']);
 
 // `publishable`: [{ type, claims_checked, ... }] in the order the model wrote them; `claims_checked`
-// is the line's count of checked claims (claim-check.js). `places`: how many may still go live. `liveTypes`: the types of the
-// perspective's live lines. Returns the chosen lines, in the order they were chosen.
+// is the line's count of checked claims (claim-check.js), undefined when the claim check is off.
+// `places`: how many may still go live. `liveTypes`: the types of the perspective's live lines.
+// Returns the chosen lines, in the order they were chosen.
 function selectLines(publishable, places, liveTypes = []) {
   if (places <= 0) return [];
   if (publishable.length <= places) return [...publishable];

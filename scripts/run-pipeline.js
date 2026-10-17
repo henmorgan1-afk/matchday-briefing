@@ -11,8 +11,9 @@
 //
 // Each side's lines go through these steps in order (Revision 21), each seeing only the lines that
 // passed every step before it: generate; format check (with dashes replaced); first checker; code
-// gate; claim check; second checker (Groq by default, lib/second-checker.js); duplicates and variety;
-// pick the best (lib/select-lines.js, at most MAX_PUBLISHED_PER_PERSPECTIVE live lines); write.
+// gate; claim check (off since Revision 24, CLAIM_CHECK_ENABLED in lib/constants.js); second checker
+// (Groq by default, lib/second-checker.js); duplicates and variety; pick the best
+// (lib/select-lines.js, at most MAX_PUBLISHED_PER_PERSPECTIVE live lines); write.
 //
 // Exits non-zero if the fetch or its FPL step fails, or if any model call or comment write fails.
 // A perspective whose attempt failed keeps its old attempt counter and is retried on the next run.
@@ -36,7 +37,7 @@ const { selectLines } = require('./lib/select-lines');
 const { SECOND_CHECK } = require('./lib/second-checker');
 const { GROQ_REASONING, GroqError, createGroqClient } = require('./lib/groq-client');
 const {
-  MIN_PASSING_COUNT, MAX_PUBLISHED_PER_PERSPECTIVE, MAX_GENERATION_ATTEMPTS, PLAYER_DATA_READY,
+  MIN_PASSING_COUNT, MAX_PUBLISHED_PER_PERSPECTIVE, MAX_GENERATION_ATTEMPTS, PLAYER_DATA_READY, CLAIM_CHECK_ENABLED,
 } = require('./lib/constants');
 
 const USAGE = 'usage: node scripts/run-pipeline.js [--match <id> [--dry-run]]';
@@ -108,6 +109,8 @@ function stopFor(err) {
 // ---------------------------------------------------------------- model work
 
 const notReached = () => Object.fromEntries(STEPS.map((s) => [s, 'not reached']));
+// Whether the claim check runs: CLAIM_CHECK_ENABLED, unless the deps say otherwise (offline tests).
+const claimCheckOn = (deps) => deps.claimCheckEnabled ?? CLAIM_CHECK_ENABLED;
 
 // A verdict that didn't pass, as the candidate's result fields. "unsure" from either checker is its own
 // failed_by, naming the checker in the reason (Revision 21).
@@ -165,9 +168,12 @@ async function runAttempt(matchData, names, stats, deps) {
     if (problems.length) Object.assign(c, { result: 'fail', reason: `code gate: ${problems.join('; ')}`, failed_by: 'code_gate' });
   }
 
-  // 5. Claim check, one call for the lines left.
+  // 5. Claim check, one call for the lines left. Off since Revision 24 (CLAIM_CHECK_ENABLED): no call,
+  // and every line goes on to the second checker with its claim_check step "off".
   lines = passing();
-  if (lines.length) {
+  if (!claimCheckOn(deps)) {
+    for (const c of lines) c.steps.claim_check = 'off';
+  } else if (lines.length) {
     const claims = await deps.claimCheck(matchData, lines);
     stats.claimCheckCalls += 1;
     addUsage(stats, CLAIM_MODEL, claims.usage);
@@ -227,6 +233,9 @@ function finishAttempt(candidates, { liveKeys, openings, liveTypes, places }) {
     }
   }
   const chosen = new Set(selectLines(publishable, places, liveTypes));
+  // With the claim check off (Revision 24) no line has a count of checked claims, so within a type the
+  // order the model wrote them decides.
+  const tieBreak = publishable.some((c) => c.claims_checked !== undefined) ? 'lines with fewer checked claims came first' : 'within a type the order written decided';
   for (const c of publishable) {
     c.published = chosen.has(c);
     c.steps.selection = c.published ? 'chosen' : 'not chosen';
@@ -238,7 +247,7 @@ function finishAttempt(candidates, { liveKeys, openings, liveTypes, places }) {
       Object.assign(c, {
         result: 'fail',
         failed_by: 'not_selected',
-        reason: `not selected: ${publishable.length} lines passed every step for ${Math.max(places, 0)} place${places === 1 ? '' : 's'}, so types took turns and lines with fewer checked claims came first`,
+        reason: `not selected: ${publishable.length} lines passed every step for ${Math.max(places, 0)} place${places === 1 ? '' : 's'}, so types took turns and ${tieBreak}`,
       });
     }
   }
@@ -474,7 +483,7 @@ function printTotals(stats, print, deps, startedAt) {
   print(`second checker: ${SECOND_CHECK.name}${reasoningDescription()}`);
   print(`generation calls this run: ${stats.generationCalls}`);
   print(`safety-check calls this run: ${stats.safetyCheckCalls} (first checker), ${stats.secondCheckCalls} (second checker)`);
-  print(`claim-check calls this run: ${stats.claimCheckCalls}`);
+  print(`claim-check calls this run: ${stats.claimCheckCalls}${claimCheckOn(deps) ? '' : ' (the claim check is off)'}`);
   print(`model tokens this run: ${stats.inputTokens} input, ${stats.outputTokens} output (${PROVIDER})`);
   for (const [model, m] of Object.entries(stats.byModel)) {
     print(`  ${model}: ${m.calls} call${m.calls === 1 ? '' : 's'}, ${m.input} input, ${m.output} output, about ${Math.round(m.neurons)} neurons`);
@@ -612,6 +621,7 @@ async function runDry(opts, deps) {
     generation_model: GENERATION_MODEL,
     check_model: CHECK_MODEL,
     claim_model: CLAIM_MODEL,
+    claim_check_enabled: claimCheckOn(deps),
     second_check: { provider: SECOND_CHECK.provider, model: SECOND_CHECK.model, ...(SECOND_CHECK.provider === 'groq' ? GROQ_REASONING : {}) },
     max_published_per_side: MAX_PUBLISHED_PER_PERSPECTIVE,
     run_at: new Date().toISOString(),

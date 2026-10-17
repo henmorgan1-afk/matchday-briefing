@@ -22,6 +22,12 @@ test('fewer checked claims are preferred within a type, then the order written',
   assert.deepEqual(chosen, ['e', 'b', 'f', 'c']);
 });
 
+test('with the claim check off (no counts), ties go by the order written', () => {
+  const plain = (type, text) => ({ type, text });
+  const lines = [plain('STAT', 's1'), plain('HOT_TAKE', 'h1'), plain('STAT', 's2'), plain('HOT_TAKE', 'h2'), plain('HOT_TAKE', 'h3'), plain('STAT', 's3'), plain('BANTER', 'b1')];
+  assert.deepEqual(selectLines(lines, 5).map((l) => l.text), ['h1', 's1', 'b1', 'h2', 's2']);
+});
+
 test('only HOT_TAKEs passing gives 5 HOT_TAKEs', () => {
   const lines = Array.from({ length: 6 }, (_, i) => line('HOT_TAKE', 0, `h${i}`));
   const chosen = selectLines(lines, 5);

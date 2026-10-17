@@ -6,6 +6,8 @@
 // unreadable (fail closed). Club culture and opinions don't fail a line by themselves. Each line keeps
 // its count of checked claims, which the selection (lib/select-lines.js) prefers low.
 // Throws only when the model call itself fails outright. Called by run-pipeline.js; no CLI of its own.
+// Off since Revision 24 (CLAIM_CHECK_ENABLED in lib/constants.js): run-pipeline.js then never calls
+// it. The code and its tests stay, so it can be switched back on.
 
 const { CLAIM_MODEL, complete, parseJsonReply } = require('./lib/ai-client');
 const { CLAIM_CHECK_PROMPT_FILE, loadPrompt, fillTemplate, playersIn } = require('./lib/match-data');

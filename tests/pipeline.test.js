@@ -12,7 +12,7 @@ const { GroqError } = require('../scripts/lib/groq-client');
 blockNetwork();
 
 // Stubbed model steps. `second` decides the second checker's verdicts (or throws); `first` the first's.
-function deps(supabase, { first, claims, second, preflight, keyMissing = false } = {}) {
+function deps(supabase, { first, claims, second, preflight, keyMissing = false, claimCheckEnabled } = {}) {
   const calls = { generate: 0, first: 0, claims: 0, second: 0, preflight: 0 };
   const logs = [];
   return {
@@ -25,6 +25,7 @@ function deps(supabase, { first, claims, second, preflight, keyMissing = false }
       quietStdout: true,
       reviewDir: fs.mkdtempSync(path.join(os.tmpdir(), 'r21-')),
       secondCheckKeyMissing: keyMissing,
+      claimCheckEnabled,
       secondCheckPreflight: async () => { calls.preflight += 1; if (preflight) await preflight(); },
       groqStats: { waitedMs: 0, waits: 0 },
       generateComments: async () => {
@@ -132,6 +133,7 @@ test('GROQ_API_KEY missing at start-up: nothing generated, exit non-zero', async
 test('dry run: each step only sees lines that passed the ones before, with every failed_by recorded', async () => {
   const sb = supabaseFor560595();
   const t = deps(sb, {
+    claimCheckEnabled: true, // switched back on for this test (off since Revision 24)
     // Line 6 (a HOT_TAKE) is unsure for the first checker.
     first: (l) => (l.text.startsWith("Bournemouth's defence") ? { result: 'unsure', reason: 'E7: maybe', rules: [] } : { result: 'pass', reason: '', rules: [] }),
     // The claim check fails "Six goals in the match".
@@ -159,6 +161,42 @@ test('dry run: each step only sees lines that passed the ones before, with every
   assert.ok(output.neurons_by_model['@cf/zai-org/glm-4.7-flash']);
   assert.equal(output.groq.calls, 2);
   assert.ok(fs.existsSync(path.join(t.deps.reviewDir, 'dryrun-999595.json')));
+});
+
+test('Revision 24: the claim check is off by default, with no model call, and every line goes on', async () => {
+  const { CLAIM_CHECK_ENABLED } = require('../scripts/lib/constants');
+  assert.equal(CLAIM_CHECK_ENABLED, false);
+  const sb = supabaseFor560595();
+  // A claim check that would fail every line, to show it isn't called.
+  const t = deps(sb, { claims: () => ({ result: 'fail', reason: 'claim check: would fail', checked: 0, claims: [] }) });
+  const { output } = await runPipeline({ matchId: '999595', dryRun: true, oneAttempt: true }, t.deps);
+  assert.equal(t.calls.claims, 0);
+  assert.equal(output.calls.claim_check, 0);
+  assert.equal(output.claim_check_enabled, false);
+  assert.equal(output.neurons_by_model['@cf/zai-org/glm-4.7-flash'], undefined);
+  const home = output.perspectives[0];
+  assert.ok(home.candidates.every((c) => c.steps.claim_check === 'off' && c.failed_by !== 'claim_check'));
+  assert.ok(home.candidates.every((c) => c.steps.second_check === 'pass'));
+  assert.deepEqual([home.passed, home.published], [8, 5]);
+  // With no checked-claim counts, selection breaks ties by the order written.
+  assert.deepEqual(home.candidates.filter((c) => c.published).map((c) => c.text), [
+    'Won 5-1 at home. Lovely stuff.',
+    'Henderson and João Pedro both scored twice. Greedy.',
+    'Cherries fans always bring the noise. Shame about the rest.',
+    'Our attack was unplayable. Pure joy.',
+    "Bournemouth's defence was a sieve. No arguments.",
+  ]);
+  assert.ok(home.candidates.filter((c) => c.failed_by === 'not_selected').every((c) => /order written/.test(c.reason)));
+  assert.ok(t.logs.some((l) => /claim-check calls this run: 0 \(the claim check is off\)/.test(l)), t.logs.join('\n'));
+});
+
+test('Revision 24: switched back on, the claim check runs and can fail a line', async () => {
+  const sb = supabaseFor560595();
+  const t = deps(sb, { claimCheckEnabled: true, claims: (l) => (l.text.startsWith('Six goals') ? { result: 'fail', reason: 'claim check: x', checked: 0, claims: [] } : { result: 'pass', reason: '', checked: 1, claims: [] }) });
+  const { output } = await runPipeline({ matchId: '999595', dryRun: true, oneAttempt: true }, t.deps);
+  assert.equal(t.calls.claims, 2);
+  assert.equal(output.claim_check_enabled, true);
+  assert.equal(output.perspectives[0].candidates.find((c) => c.text.startsWith('Six goals')).failed_by, 'claim_check');
 });
 
 test('dry run: 7 publishable lines become 5 published, the other 2 not_selected', async () => {

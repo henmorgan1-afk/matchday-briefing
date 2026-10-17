@@ -1,8 +1,9 @@
 // P1 check (SPEC.md §9). Runs `run-pipeline.js --match <id> --dry-run` against a finished match and
 // asserts the published candidates are fit to write. Prints PASS/FAIL check-p1 and exits 0/1. Never
-// prints secrets. The dry run makes model calls (per side since Revision 21: one generation, one
-// first-checker and one claim-check call on the AI_PROVIDER, which on Cloudflare come out of the free
-// daily allowance, and one or more second-checker calls on Groq's free plan).
+// prints secrets. The dry run makes model calls (per side since Revision 21: one generation and one
+// first-checker call on the AI_PROVIDER, plus one claim-check call when the claim check is on, which
+// it isn't since Revision 24; on Cloudflare these come out of the free allowance. Then one or more
+// second-checker calls on Groq's free plan.)
 // With --from <file> it checks an existing dry-run file instead, and makes no model call at all.
 // The number, banned-term and name rules (N1, N2, N5) are the pipeline's own code gate
 // (lib/code-gate.js), re-applied here to the stored match and its stored FPL events, so a published line

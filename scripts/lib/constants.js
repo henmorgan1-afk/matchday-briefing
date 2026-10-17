@@ -34,6 +34,10 @@ const MAX_COMMENTS_PER_PERSPECTIVE = 8;
 // publishable ones are kept (lib/select-lines.js).
 const MAX_PUBLISHED_PER_PERSPECTIVE = 5;
 const MAX_GENERATION_ATTEMPTS = 2;
+// Revision 24: the claim check (claim-check.js) is off. In the go-live test (Revision 23) it dropped 9
+// correct lines and caught nothing. Off, the step makes no model call and every line goes straight on
+// to the second checker; its code and tests stay, so setting this to true switches it back on.
+const CLAIM_CHECK_ENABLED = false;
 
 // fetch-matches.js window, relative to today (SPEC.md §1).
 const FETCH_DAYS_BACK = 14;
@@ -60,6 +64,7 @@ module.exports = {
   MAX_COMMENTS_PER_PERSPECTIVE,
   MAX_PUBLISHED_PER_PERSPECTIVE,
   MAX_GENERATION_ATTEMPTS,
+  CLAIM_CHECK_ENABLED,
   FETCH_DAYS_BACK,
   FETCH_DAYS_AHEAD,
   FPL_TEAM_ALIASES,
