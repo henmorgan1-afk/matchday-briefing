@@ -53,7 +53,9 @@ const {
 const OLLAMA_URL = 'http://localhost:11434/v1/chat/completions';
 
 // Workers AI pricing page (13 Oct 2026): neurons per million tokens. The free allowance is 10,000
-// neurons a day, reset at 00:00 UTC; on the Workers Free plan, calls beyond it fail, never bill.
+// neurons a day. It doesn't reset at 00:00 UTC: it behaves like a rolling window of about 24 hours
+// (Revision 23), so what a run uses counts against the next 24 hours. On the Workers Free plan,
+// calls beyond it fail, never bill.
 // gpt-oss-20b is no longer used on Cloudflare (Revision 19); its rate stays for comparison. The GLM and
 // Gemma rates are from Revision 21's brief (14 Oct 2026).
 const NEURONS_PER_MILLION_TOKENS = Object.freeze({
