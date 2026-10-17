@@ -1371,6 +1371,39 @@ Revision 23 found the pipeline not ready to go live. The project owner approved 
 - Not in the 24 hours before matchday 8. Its first match kicks off on Fri 23 Oct at 19:00 UTC (20:00 UK), so the test must finish by Thu 22 Oct, 19:00 UTC. The allowance counts the last 24 hours, so a test run later than that would still be counting against matchday 8's live runs.
 - Budget: first attempts cost about 1,300 neurons a match without the claim check, and a second attempt about 650 for that side, so about 1,500–2,000 a match. 4 matches a day fits under 10,000. Day 2 should start at least 24 hours after day 1's last run, so day 1's usage has aged out. The sanity runs below count against the 24 hours after them.
 
+**Sanity dry runs** (17 Oct 2026, evening UK, `PROMPT_VERSION` `94476e3f`, once each, with second attempts). These are the two matches with the worst sides in the go-live test, whose results are kept as `review/golive-<id>.json`. Counts are passed every step / returned / published. Nothing was written to Supabase, and `check-p1.js --from` passes on both files.
+
+| | 560583 Fulham 1-1 Man United (md5, 16:30) | 560600 Man United 1-1 Tottenham (md6, 17:30) |
+|---|---|---|
+| Go-live test (Revision 23, one attempt) | FUL 1/8/1, MUN 5/8/5; 1,445 neurons | MUN 3/8/3, TOT 4/8/4; 1,350 neurons |
+| Attempt 1 | FUL 1/8/1, MUN 4/8/4 | MUN 3/8/3, TOT 5/8/5 |
+| Attempt 2 | FUL 5/8/4 | MUN 5/8/2 |
+| Published in all | FUL 5, MUN 4 | MUN 5, TOT 5 |
+| Neurons (per attempt) | 2,120 (FUL 718 + 695, MUN 708) | 2,090 (MUN 668 + 674, TOT 748) |
+| Groq | 5 calls, 16,320 in, 2,665 out, 121 s waiting | 7 calls, 19,901 in, 2,972 out, 211 s waiting |
+| Run time | 415 s | 600 s |
+
+- **Every side reached 4 or more** after second attempts. No model call failed, and no allowance stop or Groq stop happened.
+- **The Groq retry worked once.** Tottenham's second Groq request came back `json_validate_failed`. Its 3 lines were asked again, and all 3 got readable verdicts. The log names them by their number in the failed request ("lines 1, 2, 3") and then by their number among the side's Groq lines ("lines 4, 5, 6"). That's the same lines, numbered two ways. Separately, Fulham's first Groq request ran out of output (`length`) while one verdict's reason rambled. A truncated verdict with a failed rule counted as a fail and wasn't retried, as designed.
+- **The claim check made no call**, and selection broke ties by the order written.
+- **Fact-check of the 19 published lines and notes** (Claude Code, against each match's data). **Two factual errors, both in 560600, both passed by both checkers on every rule:**
+  - Man United `HOT_TAKE` "Bentancur's red card cost us a win. Unacceptable discipline.": Bentancur plays for Tottenham, so his red card can't have cost United anything. This is exactly what E11 is for, and both checkers gave E11 "pass".
+  - Tottenham `HOT_TAKE` "Kinsky's reflexes saved us from a bigger defeat.": Tottenham drew 1-1, so there was no defeat (E7). Both checkers gave E7 "pass".
+- **Rule breaks and slips that got through** (borderline):
+  - Man United's "Both sides scored in second half, we earned a point. Typical." (560583): "Typical" implies form (E3). The same word was published for the same side in the go-live test.
+  - Fulham's "Cunha showed why United still scare teams.": "still" implies other matches (E3), and it's Fulham praising United's scorer.
+  - Man United's "Mbeumo got the goal. Lammens made two saves. Bit underwhelming.", with the note "showing limited impact": criticises named players by implication (E10).
+  - Man United's "Mbeumo showed class, delivering when it mattered.": implies the goal's timing mattered (E5), when the goal times aren't known.
+  - "Brilliant reflexes" and "reflexes" describe how saves were made (E2, mild).
+  - Tails after a comma in 4 lines. "Not thrilled" was published for Man United in both matches.
+- **What the round's fixes did, as far as two matches show:**
+  - No "If I'm being honest" in 32 candidates.
+  - "sieve" appeared twice in 560583 but wasn't published. The first checker dropped one, and the variety check the other.
+  - "finally" still appeared twice, and the gate dropped both. "goalkeeper" appeared once in a note, and the gate dropped it.
+  - Fulham's "Busy afternoon." matched the 16:30 kickoff, but it was dropped for another reason. United's "brightening our night" for the same afternoon match was dropped by Groq, which gave the wrong reason ("tonight").
+- **Cost.** With second attempts for one side each, both matches cost about 2,100 neurons, 650–750 per attempt. That's about 4 matches in any 24 hours, which the re-test plan allows for.
+- **Not ready to go live:** two published factual errors, against the zero required. E11 in the checker prompt didn't stop a wrong-side line. Catching these probably needs code, not another rule. For example, the gate could flag a line from our side that names one of their red-carded or own-goal players together with "cost us", "hurt us" or "for us", and the reverse. A line that says "defeat" or "lost" after a draw (or "won" after a loss) could be flagged the same way. That's for the next round; nothing changed after these runs.
+
 ## 1. Architecture
 
 ```
