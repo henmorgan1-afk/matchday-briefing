@@ -50,6 +50,27 @@ test('Revision 24: the checker has a wrong-side rule, E11, and checks every rule
   assert.doesNotMatch(checker, /E1 to E10|"E10": "pass", "<type rule>"/);
 });
 
+test('Revision 24: the generation prompt ends with a checklist of words the code gate rejects', () => {
+  const { side } = require('./helpers');
+  const { codeGateProblems } = require('../scripts/lib/code-gate');
+  const prompt = loadPrompt('generation-prompt.md');
+  const checklist = prompt.slice(prompt.indexOf('Before you answer, check all 8 lines and their notes:'));
+  assert.ok(prompt.indexOf('Return JSON: a list of 8 objects') < prompt.indexOf('Before you answer'), 'the checklist comes last');
+  const words = [...checklist.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(words, ['finally', 'at last', 'today', 'tonight', 'keeper', 'goalkeeper']);
+  assert.match(checklist, /No phrase is used in more than one line\./);
+  assert.ok(checklist.endsWith('own words.\n'));
+  // Every word on the list fails a STAT or HOT_TAKE line at the code gate.
+  const { matchData, names } = side('home');
+  for (const w of words) {
+    for (const type of ['STAT', 'HOT_TAKE']) {
+      assert.ok(codeGateProblems({ type, text: `Won it ${w}. Lovely.`, note: 'From the final score.' }, matchData, names).length, `${type} line with "${w}" passed the gate`);
+    }
+  }
+  // The prompt's own hedge examples no longer offer "If I'm being honest" or "I'll be honest".
+  assert.doesNotMatch(prompt, /being honest|I'll be honest|sieve/i);
+});
+
 test('the copy check still exempts the reusable idioms', () => {
   assert.deepEqual(copiedFromPrompt('Say what you like, but that was class.'), []);
 });

@@ -1821,7 +1821,7 @@ Voice: a British fan texting a mate, not a pundit and not a reporter.
   second thought matters, make it its own short sentence.
 - Never use an em dash or a spaced dash. To join two ideas, use a full
   stop. Scores like 5-3 are fine.
-- Hedge openers ("For me,", "If I'm being honest,", "I'll be honest,",
+- Hedge openers ("For me,", "Not being funny, but", "Call me mad, but",
   "Say what you like, but") make a take sound like opinion. Use one in at
   most one comment.
 - Real idiom, used sparingly and only where it fits: "put in a shift",
@@ -1851,6 +1851,12 @@ note either (no "the keeper").
 - BANTER and HOT_TAKE notes have no numbers either, not even number words.
 
 Return JSON: a list of 8 objects, each { "type", "text", "note" }.
+
+Before you answer, check all 8 lines and their notes:
+- None uses any of these words, in the line or in its note: "finally",
+  "at last", "today", "tonight", "keeper", "goalkeeper".
+- No phrase is used in more than one line. Say each thing once, in its
+  own words.
 ```
 
 **`prompts/safety-checker-prompt.md`**:
