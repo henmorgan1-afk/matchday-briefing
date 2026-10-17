@@ -1237,6 +1237,110 @@ GitHub's schedule never ran the pipeline hourly (Revision 9's open issue: every 
 6. **Tested offline** (`trigger-worker/test/index.test.js` and `tests/pipeline-workflow.test.js`, both in `npm run test:offline`, with `fetch` stubbed): the URL, method, headers and body; 200 with a run URL, with only `run_url` and with an unreadable body; 204; 401, 404 and 422 logged with GitHub's message and without the token, each with one request only; a message that echoes the token; a non-JSON error body; a network error; the missing secret (no request made); no call to GitHub's re-enable endpoint; the Wrangler config (name, cron, URLs off, logs on, no required secret, no route); and `pipeline.yml`'s triggers. 72 tests pass (56 before). `wrangler deploy --dry-run` bundles the Worker (2.65 KiB) and validates the config with no login, and uploads nothing.
 7. **Correction to Revision 21.** Its fact-check lists "two lines open with 'If I'm being honest'" among slips that got through on 560595. Only one was published: Chelsea's "If I'm being honest, the defence looked shaky after conceding." is one candidate (Chelsea returned 8, passed 5, published 5). Bournemouth's "If I'm being honest, our defence was second best all over." wasn't published.
 
+### Revision 23 (17 Oct 2026, idea 8: the go-live test)
+
+The go-live test chosen in Revision 21, run to the project owner's brief, `docs/golive-test-brief.md`. Branch `free-to-run`, `PROMPT_VERSION` `4b36e9c7`. No code or prompt changed during the test, and nothing was written to Supabase, pushed or deployed. Each match was dry-run once (`node scripts/run-pipeline.js --match <id> --dry-run`), and its output is kept as `review/golive-<id>.json`. The working notes are in `review/golive-progress.md`.
+
+**Result: not ready to go live.** Three of the four criteria fail. Every published fact checked out except one line that puts a player on the wrong side by implication. But 4 of the 16 sides published fewer than 4 lines, and one Groq reply was unparseable.
+
+**The 8 matches** (all `player_data` `ok`, excluding the tuning matches 560595, 560597 and 560598). Only 14 finished matches have `ok` player data. Matchday 6 has 10, which leaves 7 after the tuning matches, so the 8th is from matchday 5. No penalty event exists in the data.
+
+| match | why |
+|---|---|
+| 560596 Crystal Palace 3-1 Nottingham (HT 2-1), md6 | the biggest win left |
+| 560592 Sunderland 0-2 Brighton (HT 0-0), md6 | red card for the winners (Struijk), away win |
+| 560600 Man United 1-1 Tottenham (HT 0-0), md6 | draw and a red card (Bentancur) |
+| 560594 Hull City 2-2 Everton (HT 0-0), md6 | high-scoring draw |
+| 560601 Aston Villa 2-2 Brentford (HT 1-1), md6 | draw, level at both halves |
+| 560599 Ipswich 2-1 Fulham (HT 0-0), md6 | narrow home win |
+| 560593 Arsenal 2-1 Leeds (HT 0-0), md6 | narrow home win |
+| 560583 Fulham 1-1 Man United (HT 0-0), md5 | the only own goal in the data (Martinez, Man United) |
+
+**Runs.** Day 1 was 15 Oct, from 19:10 UK. Day 2 was 17 Oct, from 18:30 UK. Counts are passed every step / returned / published.
+
+| match | sides | neurons | Groq calls, tokens in/out, waited | run |
+|---|---|---|---|---|
+| 560596 | CRY 8/8/5, NOT 5/8/5 | 1,364 | 5, 16,029/2,099, 182 s | 355 s |
+| 560592 | SUN 4/8/4, BHA 6/8/5 | 1,421 | 5, 15,811/2,126, 150 s | 470 s |
+| 560600 | MUN **3**/8/**3**, TOT 4/8/4 | 1,350 | 5, 12,533/1,624, 122 s | 296 s |
+| 560594 | HUL 7/8/5, EVE 4/8/4 | 1,321 | 5, 15,980/1,847, 152 s | 366 s |
+| 560601 | AVL 4/8/4, BRE **3**/8/**3** | 1,333 | 4, 12,859/1,655, 61 s | 313 s |
+| 560599 | IPS 7/8/5, FUL **3**/8/**3** | 1,358 | 5, 15,765/1,793, 121 s | 392 s |
+| 560593 | ARS 5/8/5, LEE 4/8/4 | 1,244 | 4, 12,488/1,584, 61 s | 256 s |
+| 560583 | FUL **1**/8/**1**, MUN 5/8/5 | 1,445 | 3, 9,326/1,775, 61 s | 353 s |
+
+- 560601's first run, on day 1, stopped on Cloudflare's 3036 at Villa's first generation call. It made no model call and exited 1, and its output is kept as `review/golive-560601-3036.json`. Because no match work was done, it was run again on day 2. No completed match was rerun.
+- 128 lines returned, 73 passed every step, 65 published. What dropped the other 63:
+
+  | step | lines dropped |
+  |---|---|
+  | first checker | 16 |
+  | Groq | 14 |
+  | code gate | 12 |
+  | claim check | 9 |
+  | not selected | 8 |
+  | variety | 2 |
+  | unsure | 2 |
+
+- The steps caught real errors before publishing, among them Sunderland's "Brighton won 2-0 at home" (wrong venue, first checker), the invented player "Roofs" (first checker), "Lucky" as a player name (code gate), and Fulham's "Zero at half-time. Nothing changed." (Groq).
+- **All 9 claim-check drops were lines whose facts were right.** It caught nothing. Its misreads:
+  - two dates it can't compare ("October tenth", "Saturday October tenth");
+  - "Both sides netted twice" read as the team's total;
+  - "Sessegnon scored." read as Fulham's goals, and "Lost 2-1 away" read as Leeds scoring 2;
+  - "Kinsky's heroics" given a count of 1;
+  - an unknown claim kind "venue" for "at home";
+  - and, from Fulham, "Martinez own-goal gave us the goal." read as putting Martinez on Fulham, twice.
+
+  Those misreads alone cost Fulham (560583) 4 of its 7 lost lines.
+- **Groq's wrong drops:** the unparseable reply (3 lines, 560600 Man United), two verdicts with no `result` (560592 Brighton, 560583 Fulham), "Red Devils" read as holding the number 1 (560583 Fulham), and two correct STATs marked "unsure: S1" (560601 Brentford).
+
+**Fact-check of the 65 published lines and notes** (Claude Code, against each match's data: every score, count, player, team, half, result, home or away, date and matchday).
+- **One factual error, by implication.** Crystal Palace's `HOT_TAKE` "Lerma showed why we fear him." is about Lerma, Palace's own scorer, but "we fear him" reads him as an opponent (E7). No line states a wrong score, count, player, team, half, result, venue, date or matchday.
+- **Rule breaks that got through** (each borderline):
+  - Implying form (E3): Nottingham's "Gutted but expected" and Man United's "Typical" (560583).
+  - Claims about play after a red card whose time isn't known (E5): Brighton's "We survived with backs against the wall" (its note ties it to the red card), and Tottenham's "We looked flat after the sending off".
+  - Describing the offence (E2): Tottenham's "Bentancur's red was reckless".
+  - A number word in a `HOT_TAKE` (H1): Nottingham's "Crystal's trio ran the show" (the fact is right: three scorers).
+  - Past meetings (B3): Palace's BANTER "...than your defence ever works".
+  - Overstating a 0-0 first half (E7): Ipswich's "our defence looked like a sieve" after conceding once in a win, and Arsenal's "nothing stopped us".
+  - Beyond football (B7): Fulham's "a pint solves everything" and Leeds' "fancy kits".
+  - Away from the club's fans (B6): Hull's muddled "think they own the Toffees chant" (Toffees is Everton's own nickname).
+- **Style slips:**
+  - "sieve" in 8 published lines, on 8 sides;
+  - tails after a comma, in about 9 lines;
+  - "If I'm being honest" or "I'll be honest" openers, in 4 lines;
+  - "night" for afternoon kickoffs (Brighton, Hull, Brentford);
+  - "Not thrilled" after Brighton's 2-0 win;
+  - BANTER notes claiming a nickname or chant the line doesn't use (Man United and Tottenham in 560600);
+  - "Crystal" for Crystal Palace;
+  - Fulham praising United's scorer ("Cunha reminded everyone United still have class.").
+
+**The pass criteria.**
+
+| criterion | result | why |
+|---|---|---|
+| Zero factual errors in published lines | **Fail** | One: "Lerma showed why we fear him." puts Palace's scorer on the wrong side by implication. It's the same class of error as round 1's Martinez line, though implied rather than stated. |
+| Every side at least 4 published | **Fail** | 12 of 16 sides published 4 or 5. Man United (560600) published 3, Brentford 3, Fulham (560599) 3 and Fulham (560583) 1. A dry run makes no second attempt, and the live pipeline would make one for each of these sides. |
+| No "MODEL CALL FAILED", unparseable or Groq-stop runs | **Fail** | No "MODEL CALL FAILED" and no Groq stop. But Groq returned one unparseable reply (560600 Man United, `json_validate_failed`, no JSON), and two verdicts had no `result`. All failed closed. |
+| Cost leaves room for about 7 matches in one UK day | **Pass, only just** | First attempts only: 1,244–1,445 neurons a match (mean 1,355), so 7 matches is about 9,500 of 10,000. The heaviest match times 7 is 10,115. Second attempts for a quarter of sides, as in this test, would add about 650 each and push a 7-match day past 10,000. Groq is fine: 11–18k tokens a match (mean 15.7k), about 110k of its 200k a day, and 3–5 calls a match. Time is fine: 256–470 s a match (mean 350 s), so 7 matches fit one run before the 40-minute cutoff, within the 60-minute timeout. |
+
+**Matches a day:** about 7 on Cloudflare's neurons (10,000 / 1,355), about 12 on Groq's tokens, and about 7 to 10 a run on time.
+
+**Cloudflare's allowance is not a 00:00 UTC daily reset** (a correction to Revision 18's "The free allowance" and to the comment in `ai-client.js`, which isn't changed during the test).
+- 560601's 3036 came on 15 Oct at about 19:39 UTC. The project owner read Cloudflare's dashboard: 5.46k of 10k used "today" (UTC), and 10.92k in the previous 21 hours.
+- The run's own estimate for 15 Oct was 5,456 neurons, so the estimate matches the dashboard.
+- The other ~5.46k is Revision 21's dry runs, made between 00:01 and 00:47 UK on 15 Oct, which is 23:01–23:47 UTC on 14 Oct.
+- A counter that reset at 00:00 UTC would have stood at 5.46k and wouldn't have refused. The refusal came when the last 21 hours passed 10k. So **the limit behaves like a rolling window of about 24 hours**, not a UTC calendar day, and the dashboard's "today" figure doesn't show how much is left.
+- The limit isn't enforced exactly at 10,000: 560594 completed while the window passed 10k, and the refusal came at 10.92k.
+- Day 2's four runs (17 Oct, 17:30–19:40 UTC, about 46 hours after the last use) used about 5,380 neurons and never hit 3036. Both a daily and a rolling 24-hour limit predicted a full 10,000, so day 2 can't tell them apart.
+- **What it means for going live:** usage carries over for 24 hours, not to midnight UTC. A Saturday that uses most of the 10,000 delays Sunday's afternoon matches until Saturday's usage ages out, which is roughly the same time of day, so a few hours. Any dry run or `check-p1.js` run also counts against the next 24 hours of live matches.
+
+**Before going live** (for the next round; the go-live test doesn't change anything):
+- the claim check's misreads (scorers read as team totals, "us" read as a player's team, dates in words, unknown kinds) cost more good lines than any other step and caught no error;
+- Groq's unparseable and `result`-less replies;
+- a wrong-side rule for opinions about a team's own players ("why we fear him");
+- the "sieve" habit.
+
 ## 1. Architecture
 
 ```
