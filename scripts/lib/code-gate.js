@@ -192,9 +192,10 @@ function promptTailProblems(template = loadPrompt(GENERATION_PROMPT_FILE)) {
 // superlative ("worst first half I've seen from us all season"); "again", because a second goal in the
 // same match is "again"; and "starting to", which also opens plain opinions ("Starting to think...").
 // BANTER is exempt: it may say how a club's fans habitually behave (B3).
+// "typical" (Revision 25): Man United published "Typical." twice, implying form.
 const OTHER_MATCH_TERMS = Object.freeze([
   'finally', 'at last', 'for once', 'as usual', 'as always', 'as ever', 'once again', 'yet again',
-  'unbeaten', 'winning run', 'losing run', 'winning streak', 'losing streak',
+  'unbeaten', 'winning run', 'losing run', 'winning streak', 'losing streak', 'typical',
 ]);
 const OTHER_MATCH_PATTERN = phrasePattern(OTHER_MATCH_TERMS);
 
@@ -222,6 +223,209 @@ function wordingProblems({ type, text, note }) {
       for (const t of matchesOf(OTHER_MATCH_PATTERN, s)) problems.push(`${where}compares with other matches (E3), ${JSON.stringify(t)}`);
     }
     for (const t of matchesOf(POSITION_PATTERN, s)) problems.push(`${where}names a player's position (E9), ${JSON.stringify(t)}`);
+  }
+  return problems;
+}
+
+// ---------------------------------------------------------------- results and sides (Revision 25)
+
+// Both checkers passed Tottenham's "Kinsky's reflexes saved us from a bigger defeat." after a 1-1 draw,
+// and Man United's "Bentancur's red card cost us a win." about a Spurs player (Revision 24). These two
+// rules catch that kind of error in code. Both apply to a line and its note, in every type, and work
+// sentence by sentence on accent-folded, lower-cased text.
+
+const DASHES = '\\-‐‑‒–—';
+const lowerFold = (s) => foldName(s).toLowerCase();
+
+// The sentences of a text, split after . ! or ?, as { text, start }.
+function sentencesOf(text) {
+  return [...String(text).matchAll(/[^.!?]+[.!?]*/g)].filter((m) => m[0].trim()).map((m) => ({ text: m[0], start: m.index }));
+}
+
+// A sentence's words as { word, start, end }, apostrophes kept ("didn't", "we've").
+function tokensOf(s) {
+  return [...s.matchAll(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu)].map((m) => ({ word: m[0], start: m.index, end: m.index + m[0].length }));
+}
+
+// A word that turns what follows into a hypothetical, a denial or a might-have-been ("should have won",
+// "deserved to win", "can win", "no defeat", "didn't cost us", "cost us a win", "a possible win"), so it
+// states no result. Narrowed by the false-positive scan (Revision 25): "can", "will", "cost", "denied",
+// "robbed", "possible" and "potential" were added.
+const HEDGE_WORDS = new Set([
+  'could', 'should', 'would', 'might', 'must', "could've", "should've", "would've", "might've", "must've",
+  'can', 'cannot', 'will', "'ll", 'deserved', 'deserve', 'deserves', 'deserving', 'nearly', 'almost',
+  'cost', 'costs', 'costing', 'denied', 'robbed', 'possible', 'potential',
+  'no', 'not', 'never', 'nobody', 'neither', 'nothing', 'without',
+]);
+const isHedge = (word) => HEDGE_WORDS.has(word) || /n't$/.test(word) || /'ll$/.test(word);
+// Whether one of the `n` words before position `at` hedges it.
+const hedged = (tokens, at, n) => tokens.filter((t) => t.end <= at).slice(-n).some((t) => isHedge(t.word));
+
+// Rule 1: result words must fit the result. The words that fail after each result, as the project
+// owner listed them. "beaten" is checked only after a draw: after a win or a loss it's as often about
+// the other team ("we've beaten them") as about us, and "defeated" isn't checked for the same reason.
+// Plurals aren't checked: the scan found them only about matches in general ("turning draws like that
+// into wins", "Draws on the final score").
+const WRONG_RESULT_WORDS = Object.freeze({
+  drew: Object.freeze(['defeat', 'lost', 'loss', 'beaten', 'won', 'win', 'victory']),
+  won: Object.freeze(['defeat', 'lost', 'loss', 'draw', 'drew']),
+  lost: Object.freeze(['won', 'win', 'victory', 'draw', 'drew']),
+});
+const RESULT_WORDS = new Set(Object.values(WRONG_RESULT_WORDS).flat());
+const FLIP_RESULT = Object.freeze({ won: 'lost', lost: 'won', drew: 'drew' });
+
+// Phrases blanked out before the check: they name results without stating this match's ("win, lose or
+// draw", "win or lose", "the difference between a draw and a defeat").
+const RESULT_IDIOMS = /\bwin,?\s+lose,?\s+or\s+draw\b|\bwin\s+or\s+lose\b|\blose\s+or\s+draw\b|\bbetween\s+(?:a\s+|the\s+)?\w+\s+and\s+(?:a\s+|the\s+)?\w+/g;
+// What may follow a result word when it isn't about the match result ("won the ball", "lost the
+// plot", "lost composure", "at a loss for words", "drew level", "a draw at the break").
+const RESULT_IDIOM_AFTER = new RegExp(`^\\s+(?:the\\s+ball|ball|back|possession|a\\s+corner|corners|a\\s+free[\\s${DASHES}]kick|free[\\s${DASHES}]kicks|a\\s+penalty|penalties|the\\s+battle|battles|duels?|headers?|the\\s+toss|count|track|touch|the\\s+plot|for\\s+words|(?:our|their|his)\\s+(?:heads?|shape|way|nerve|cool)|focus|composure|control|discipline|momentum|the\\s+lead|of|level|at\\s+the\\s+break|at\\s+half[\\s${DASHES}]?time)\\b`);
+const DRAW_IDIOM_AFTER = /^\s+(?:on|from|upon)\b/; // "draws on the final score"
+// What may come before one: "at a loss", and a half rather than the match ("a first-half draw",
+// "half-time scoreless draw").
+const RESULT_IDIOM_BEFORE = new RegExp(`\\bat\\s+a\\s+$|\\b(?:first|second)[\\s${DASHES}]*half\\s+(?:\\w+\\s+)?$|\\bhalf[\\s${DASHES}]*time\\s+(?:\\w+\\s+)?$|\\bat\\s+the\\s+break\\s+$`);
+// A team named after one of these is the object, not the subject ("away at City, lost 5-3").
+const OBJECT_BEFORE = /\b(?:at|to|against|by|over|from|than|with|v|vs|beat|beating|past)\s+$/;
+
+// Every reference to a team in a text, as { who, at, end }: "we", "us" and "our" mean us; "they",
+// "them" and "their" mean them; so does each team's name, or any word of it over 3 letters that the
+// other team's name doesn't share ("United" for "Man United"); and so does a listed player's name, for
+// that player's team ("Walton made four. Still lost.").
+function teamReferences(s, raw, md, names) {
+  const nameForms = (name, other) => {
+    const full = lowerFold(name);
+    const otherWords = lowerFold(other).split(/\s+/);
+    return [full, ...full.split(/\s+/).filter((w) => full.includes(' ') && w.length > 3 && !otherWords.includes(w))].map(escapeRegExp);
+  };
+  const pattern = (words) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${words.join('|')})(?:'s)?(?![\\p{L}\\p{N}])`, 'gu');
+  const found = [];
+  for (const [who, words] of [
+    ['us', ['we', "we're", "we've", "we'd", 'us', 'our', 'ours', ...nameForms(md.perspective_team, md.opponent)]],
+    ['them', ['they', "they're", "they've", "they'd", 'them', 'their', 'theirs', ...nameForms(md.opponent, md.perspective_team)]],
+  ]) {
+    for (const m of s.matchAll(pattern(words))) found.push({ who, at: m.index, end: m.index + m[0].length });
+  }
+  const inMatch = new Map((names?.matchPlayers ?? []).map((p) => [p.fpl_id, p]));
+  if (names?.nameIndex) {
+    for (const { name, fplIds, index } of namesIn(raw, names.nameIndex)) {
+      const here = fplIds.filter((id) => inMatch.has(id));
+      if (here.length === 1) found.push({ who: inMatch.get(here[0]).side === 'perspective' ? 'us' : 'them', at: index, end: index + name.length });
+    }
+  }
+  return found.filter((r) => !OBJECT_BEFORE.test(s.slice(0, r.at))).sort((a, b) => a.at - b.at);
+}
+
+// Whose result a result word at [start, end) in the sentence starting at `from` is about: "for them"
+// or "for Chelsea" straight after it; otherwise the nearest team reference before it in its sentence,
+// then in an earlier sentence; otherwise us (lines are written from our side: "Lost 5-1 away.").
+function resultSubject(s, start, end, from, refs) {
+  const after = s.slice(end).match(/^\s+for\s+/);
+  if (after) {
+    const next = refs.find((r) => r.at === end + after[0].length);
+    if (next) return next.who;
+  }
+  const before = refs.filter((r) => r.end <= start);
+  return (before.filter((r) => r.at >= from).pop() ?? before.pop())?.who ?? 'us';
+}
+
+function resultWordProblems(text, md, where, names = null) {
+  const raw = String(text);
+  const s = lowerFold(raw).replace(/[‘’]/g, "'").replace(RESULT_IDIOMS, (m) => ' '.repeat(m.length));
+  const refs = md.result === 'drew' ? [] : teamReferences(s, raw, md, names);
+  const problems = [];
+  for (const sentence of sentencesOf(s)) {
+    const tokens = tokensOf(sentence.text).map((t) => ({ ...t, start: t.start + sentence.start, end: t.end + sentence.start }));
+    tokens.forEach((t, i) => {
+      if (!RESULT_WORDS.has(t.word)) return;
+      if (RESULT_IDIOM_AFTER.test(s.slice(t.end)) || RESULT_IDIOM_BEFORE.test(s.slice(0, t.start))) return;
+      if (['draw', 'drew'].includes(t.word) && DRAW_IDIOM_AFTER.test(s.slice(t.end))) return;
+      // "to win" is an aim, not a result ("their divine right to win", "a game you expect to win").
+      if (['win', 'draw'].includes(t.word) && tokens[i - 1]?.word === 'to') return;
+      if (hedged(tokens, t.start, 3)) return;
+      const subject = md.result === 'drew' ? 'us' : resultSubject(s, t.start, t.end, sentence.start, refs);
+      const result = subject === 'us' ? md.result : FLIP_RESULT[md.result];
+      if (!WRONG_RESULT_WORDS[result].includes(t.word)) return;
+      const fact = md.result === 'drew' ? 'the match was a draw' : `${subject === 'us' ? md.perspective_team : md.opponent} ${result}`;
+      problems.push(`${where}says ${JSON.stringify(t.word)}, but ${fact}`);
+    });
+  }
+  return problems;
+}
+
+// Rule 2: a player's event can't help or hurt the wrong side. Mentions of each event in a sentence,
+// in this order: each match is blanked out before the next pattern runs, so "own goal" isn't also a
+// goal and "saved a penalty" isn't also a save.
+const EVENT_MENTIONS = Object.freeze([
+  ['own_goal', new RegExp(`own[\\s${DASHES}]*(?:goals?|net)`, 'g')],
+  ['pen_missed', new RegExp(`\\b(?:miss\\w*|blaz\\w*|sk(?:y|ied|ies))\\s+(?:\\w+\\s+)?(?:penalty|penalties|pen|spot[\\s${DASHES}]*kick)|\\b(?:penalty|pen)\\s+miss\\w*`, 'g')],
+  ['pen_saved', new RegExp(`\\bsav\\w*\\s+(?:\\w+\\s+)?(?:penalty|penalties|pen|spot[\\s${DASHES}]*kick)|\\b(?:penalty|pen)\\s+sav\\w*`, 'g')],
+  ['red_card', /\bred\b|\bsent\s+off\b|\bsending\s+off\b|\bdismiss\w*/g],
+  ['saves', /\bsav(?:e|es|ed|ing)\b|\breflex\w*|\bstops?\b/g],
+  ['goal', new RegExp(`\\bgoals?\\b|\\bscor\\w*|\\bbrace\\b|\\bhat[\\s${DASHES}]*trick|\\bfinish\\w*|\\bstrike\\b|\\bnetted\\b|\\bequali[sz]er\\b|\\bwinner\\b`, 'g')],
+]);
+// Whether an event helps the team of the player who has it.
+const HELPS_OWN_TEAM = Object.freeze({ goal: true, saves: true, pen_saved: true, red_card: false, own_goal: false, pen_missed: false });
+const EVENT_WORDS = Object.freeze({ goal: 'goal', saves: 'saves', pen_saved: 'penalty save', red_card: 'red card', own_goal: 'own goal', pen_missed: 'penalty miss' });
+
+function eventsMentioned(s) {
+  let rest = s;
+  const found = new Set();
+  for (const [event, pattern] of EVENT_MENTIONS) {
+    rest = rest.replace(pattern, (m) => { found.add(event); return ' '.repeat(m.length); });
+  }
+  return found;
+}
+
+// "Bad for us" and "good for us" phrases. A phrase straight after a hedge ("didn't cost us") isn't
+// judged. "for us" after "too <word>" or a word for something bad ("too good for us", "a long night
+// for us", and since the scan "a two-nil loss for us") isn't good for us, and nor is "gift" handed to
+// them ("gifted them") or "kept us" out.
+const HURTS_US = /\b(?:cost|costs|costing|hurt|hurts|hurting|punish(?:ed|es|ing)?|kill(?:ed|s|ing)?|scare[sd]?|scaring)\s+us\b|\bwe\s+fear\b/g;
+const HELPS_US = /\bfor\s+us\b|\bgave\s+us\b|\bgift\w*|\bhelped\s+us\b|\bsaved\s+us\b|\bkept\s+us\b/g;
+const NOT_HELP_BEFORE = /(?:\btoo\s+\S+|\b(?:bad|worse|worst|tough|hard|difficult|nightmare|grim|horrible|awful|disaster|disastrous|painful|bleak|long|miserable|sad|gutting|frustrating|cruel|loss|defeat|blow|setback|beating|hammering|thrashing))\s+(?:\w+\s+)?$/;
+const NOT_HELP_AFTER = /^\w*\s+(?:them|their|it\s+to\s+them)\b|^\s+(?:out|quiet|at\s+bay|in\s+check)\b/;
+
+function playerSideProblems(text, md, names, where) {
+  const inMatch = new Map((names.matchPlayers ?? []).map((p) => [p.fpl_id, p]));
+  if (!inMatch.size) return [];
+  const problems = [];
+  for (const { text: raw } of sentencesOf(text)) {
+    const s = lowerFold(raw).replace(/[‘’]/g, "'");
+    const tokens = tokensOf(s);
+    // The match's players named in the sentence, in order; a name shared by two of them is skipped.
+    const named = namesIn(raw, names.nameIndex)
+      .map(({ name, fplIds, index }) => ({ name, index, players: fplIds.filter((id) => inMatch.has(id)).map((id) => inMatch.get(id)) }))
+      .filter((n) => n.players.length === 1)
+      .map((n) => ({ name: n.name, index: n.index, player: n.players[0] }));
+    if (!named.length) continue;
+    const mentioned = eventsMentioned(s);
+    for (const [pattern, hurts] of [[HURTS_US, true], [HELPS_US, false]]) {
+      for (const m of s.matchAll(pattern)) {
+        if (hedged(tokens, m.index, 2)) continue;
+        if (!hurts && (NOT_HELP_BEFORE.test(s.slice(0, m.index)) || NOT_HELP_AFTER.test(s.slice(m.index + m[0].length)))) continue;
+        // The player the phrase is about: the nearest one named before it, or the first after it.
+        const tied = named.filter((n) => n.index < m.index).pop() ?? named[0];
+        const { player } = tied;
+        const has = Object.keys(player.events).filter((e) => player.events[e] > 0 && e in HELPS_OWN_TEAM);
+        const events = has.filter((e) => mentioned.has(e)).length ? has.filter((e) => mentioned.has(e)) : has;
+        if (!events.length) continue;
+        const ours = player.side === 'perspective';
+        const goodForUs = (e) => HELPS_OWN_TEAM[e] === ours;
+        if (hurts ? !events.every(goodForUs) : events.some(goodForUs)) continue;
+        const team = ours ? md.perspective_team : md.opponent;
+        const what = events.map((e) => EVENT_WORDS[e]).join(' and ');
+        problems.push(`${where}${JSON.stringify(m[0])} ties ${tied.name} to the wrong side: ${tied.name} plays for ${team}, so the ${what} ${hurts ? 'helped' : 'hurt'} ${md.perspective_team}`);
+      }
+    }
+  }
+  return problems;
+}
+
+// Revision 25's two rules for one line and its note.
+function resultAndSideProblems({ text, note }, matchData, names) {
+  const problems = [];
+  for (const [where, s] of [['', text], ['note ', note ?? '']]) {
+    problems.push(...resultWordProblems(s, matchData, where, names), ...playerSideProblems(s, matchData, names, where));
   }
   return problems;
 }
@@ -383,8 +587,9 @@ function allowedNumbers(matchData) {
 // BANTER may hold no number at all, in the line or in its note (BANTER's line rule is Revision 5's),
 // no type may contain a banned term, every player name must pass the name rules, neither the line nor
 // its note may say "our" before an opposition player's name, use a banned tail, a position word, or
-// (STAT and HOT_TAKE) an other-match word, no line may repeat five words in a row from the generation
-// prompt, and no note may say "data". `names` comes from nameContext; it's
+// (STAT and HOT_TAKE) an other-match word, neither may use a result word that doesn't fit the result
+// or tie a player's event to the wrong side (Revision 25), no line may repeat five words in a row from
+// the generation prompt, and no note may say "data". `names` comes from nameContext; it's
 // required, so the name rules can't be skipped by leaving it out.
 function codeGateProblems({ type, text, note }, matchData, names) {
   if (!names?.nameIndex) throw new Error('codeGateProblems needs a name context (nameContext) for the name rules');
@@ -401,6 +606,7 @@ function codeGateProblems({ type, text, note }, matchData, names) {
   problems.push(...nameProblems({ type, text }, names));
   problems.push(...teamMixUps(text, names), ...teamMixUps(note ?? '', names).map((p) => `note ${p}`));
   problems.push(...wordingProblems({ type, text, note }));
+  problems.push(...resultAndSideProblems({ text, note }, matchData, names));
   for (const stretch of copiedFromPrompt(text)) {
     problems.push(`repeats ${wordsOf(stretch).length} words in a row from the generation prompt, ${JSON.stringify(stretch)}`);
   }
@@ -425,6 +631,10 @@ module.exports = {
   POSITION_TERMS,
   promptTailProblems,
   wordingProblems,
+  WRONG_RESULT_WORDS,
+  resultWordProblems,
+  playerSideProblems,
+  resultAndSideProblems,
   REUSABLE_PHRASES,
   buildPromptRuns,
   copiedFromPrompt,

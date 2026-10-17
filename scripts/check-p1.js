@@ -179,6 +179,7 @@ async function main() {
     `every type and note valid; ${linesChecked} published lines: STAT numbers all in the match data, no numbers in HOT_TAKE or BANTER lines or notes, ` +
     `no banned terms, ${named.length} player names all with an event in the match (N1, N2), none under 18 outside STAT (N5), ` +
     'none in BANTER, no "our" before an opposition player, no banned tails, no other-match words in STAT or HOT_TAKE, ' +
+    'no result words that don\'t fit the result, no player\'s event tied to the wrong side, ' +
     'no position words, no five-word copies of the generation prompt, no banned note words, no two lines opening with the same ' +
     `three words across both sides${from ? '' : '; nothing written to Supabase'}`);
 }

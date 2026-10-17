@@ -153,10 +153,12 @@ test('dry run: each step only sees lines that passed the ones before, with every
   assert.equal(by('Rogers').failed_by, 'groq');
   assert.match(by('That second half').reason, /^unsure \(second checker \(Groq qwen/);
   assert.deepEqual([home.returned, home.passed, home.published], [8, 4, 4]);
-  // The away side reuses the same stub lines, so the variety check drops all of them.
+  // The away side reuses the same stub lines, so the variety check drops all of them, except "Won 5-1
+  // at home.", which the code gate now fails first for Bournemouth, who lost (Revision 25).
   const away = output.perspectives[1];
   assert.equal(away.published, 0);
-  assert.ok(away.candidates.filter((c) => c.steps.variety === 'fail').length === 4);
+  assert.ok(away.candidates.filter((c) => c.steps.variety === 'fail').length === 3);
+  assert.match(away.candidates.find((c) => c.text.startsWith('Won 5-1')).reason, /says "won", but Bournemouth lost/);
   assert.deepEqual(output.calls, { generation: 2, safety_check: 2, claim_check: 2, second_check: 2 });
   assert.ok(output.neurons_by_model['@cf/zai-org/glm-4.7-flash']);
   assert.equal(output.groq.calls, 2);
