@@ -3,7 +3,8 @@
 // prints secrets. The dry run makes model calls (per side since Revision 21: one generation and one
 // first-checker call on the AI_PROVIDER, plus one claim-check call when the claim check is on, which
 // it isn't since Revision 24; on Cloudflare these come out of the free allowance. Then one or more
-// second-checker calls on Groq's free plan.)
+// second-checker calls on Groq's free plan. Since Revision 24 a side with fewer than 4 published lines
+// gets a second attempt, as a live run would, and the check counts both attempts' published lines.)
 // With --from <file> it checks an existing dry-run file instead, and makes no model call at all.
 // The number, banned-term and name rules (N1, N2, N5) are the pipeline's own code gate
 // (lib/code-gate.js), re-applied here to the stored match and its stored FPL events, so a published line
@@ -154,7 +155,8 @@ async function main() {
 
       const byType = COMMENT_TYPES.map((t) => `${t} ${passing.filter((c) => c.type === t).length}`).join(', ');
       const numbers = COMMENT_TYPES.map((t) => `${t} [${seen[t].join(', ')}]`).join(' ');
-      info(`${team.slug}: ${passing.length} published of ${p.passed ?? '?'} that passed every step, ${p.candidates.length} returned ` +
+      const attempts = p.attempts?.length > 1 ? ` over ${p.attempts.length} attempts` : '';
+      info(`${team.slug}: ${passing.length} published of ${p.passed ?? '?'} that passed every step, ${p.candidates.length} returned${attempts} ` +
         `(${byType}); numbers ${numbers}; STAT numbers allowed {${[...allowed].sort((a, b) => a - b).join(', ')}}`);
       // Lines the first checker passed but a later step dropped: each one is a checker miss.
       const later = { code_gate: 'code gate', claim_check: 'claim check', groq: 'second checker', second_checker: 'second checker', unsure: 'unsure', variety: 'variety check', not_selected: 'selection' };

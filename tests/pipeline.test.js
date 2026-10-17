@@ -141,7 +141,7 @@ test('dry run: each step only sees lines that passed the ones before, with every
     // The second checker fails one line and is unsure of another.
     second: (l) => (l.text.startsWith('Rogers') ? { result: 'fail', reason: 'H3', rules: [] } : l.text.startsWith('That second half') ? { result: 'unsure', reason: 'E5: maybe', rules: [] } : passVerdict()),
   });
-  const { ok, output } = await runPipeline({ matchId: '999595', dryRun: true }, t.deps);
+  const { ok, output } = await runPipeline({ matchId: '999595', dryRun: true, oneAttempt: true }, t.deps);
   assert.equal(ok, true, t.logs.join('\n'));
   const home = output.perspectives[0];
   const by = (start) => home.candidates.find((c) => c.text.startsWith(start));
@@ -197,6 +197,96 @@ test('Revision 24: switched back on, the claim check runs and can fail a line', 
   assert.equal(t.calls.claims, 2);
   assert.equal(output.claim_check_enabled, true);
   assert.equal(output.perspectives[0].candidates.find((c) => c.text.startsWith('Six goals')).failed_by, 'claim_check');
+});
+
+// Bournemouth's lines for the second-attempt tests: the first attempt's, of which the first checker
+// passes only two, and a fresh set for the second attempt, which all pass.
+const AWAY_FIRST = [
+  { type: 'STAT', text: 'Lost 5-1 away. Grim.', note: 'From the final score.' },
+  { type: 'STAT', text: 'Evanilson got our goal. Small mercies.', note: 'From who scored.' },
+  { type: 'STAT', text: 'Chelsea scored five. Brutal.', note: 'From the final score.' },
+  { type: 'BANTER', text: 'Blues fans do love a sing-song.', note: "General chat, not about this match. The Blues is Chelsea's nickname." },
+  { type: 'HOT_TAKE', text: 'Our midfield went missing.', note: 'Strong take. Not everyone will agree.' },
+  { type: 'HOT_TAKE', text: 'Evanilson deserved better support.', note: 'Strong take. Not everyone will agree.' },
+  { type: 'HOT_TAKE', text: 'Second half felt endless.', note: 'Strong take. Not everyone will agree.' },
+  { type: 'HOT_TAKE', text: 'Chelsea looked sharp all afternoon.', note: 'Strong take. Not everyone will agree.' },
+];
+const AWAY_SECOND = [
+  { type: 'STAT', text: 'Petrović made a save. Something.', note: 'From who made saves.' },
+  { type: 'STAT', text: 'Half-time was 2-0 to them.', note: 'From the half-time score.' },
+  { type: 'STAT', text: 'Conceded five. Not ideal.', note: 'From the final score.' },
+  { type: 'BANTER', text: 'Chelsea fans never stop singing.', note: 'General chat, not about this match.' },
+  { type: 'HOT_TAKE', text: 'We never got going.', note: 'Strong take. Not everyone will agree.' },
+  { type: 'HOT_TAKE', text: 'Their attack was too slick.', note: 'Strong take. Not everyone will agree.' },
+  { type: 'HOT_TAKE', text: 'Evanilson was our bright spark.', note: 'Strong take. Not everyone will agree.' },
+  { type: 'HOT_TAKE', text: 'Not our afternoon at all.', note: 'Strong take. Not everyone will agree.' },
+];
+
+function attemptsSetup() {
+  const sb = supabaseFor560595();
+  const firstPasses = new Set([...chelseaLines().map((l) => l.text), 'Lost 5-1 away. Grim.', 'Our midfield went missing.', ...AWAY_SECOND.map((l) => l.text)]);
+  const t = deps(sb, { first: (l) => (firstPasses.has(l.text) ? { result: 'pass', reason: '', rules: [] } : { result: 'fail', reason: 'E7', rules: [] }) });
+  const batches = [chelseaLines(), AWAY_FIRST, AWAY_SECOND];
+  t.deps.generateComments = async () => {
+    t.calls.generate += 1;
+    return { candidates: batches[t.calls.generate - 1].map((l) => ({ ...l })), stopReason: 'stop', usage: usage(2900, 3000, 300) };
+  };
+  return t;
+}
+
+test('Revision 24: a dry run gives a side under 4 published a second attempt, which fills only the places left', async () => {
+  const t = attemptsSetup();
+  const { ok, output } = await runPipeline({ matchId: '999595', dryRun: true }, t.deps);
+  assert.equal(ok, true, t.logs.join('\n'));
+  assert.equal(output.max_attempts_per_side, 2);
+  const [home, away] = output.perspectives;
+  assert.equal(home.attempts.length, 1); // 5 published at the first attempt
+  assert.equal(away.attempts.length, 2);
+  assert.deepEqual(away.attempts.map((a) => [a.number, a.returned, a.passed, a.published]), [[1, 8, 2, 2], [2, 8, 8, 3]]);
+  assert.deepEqual([away.returned, away.passed, away.published], [16, 10, 5]);
+  assert.equal(away.candidates.length, 16);
+  assert.ok(away.candidates.every((c, i) => c.attempt === (i < 8 ? 1 : 2)));
+  // Attempt 1 published a STAT and a HOT_TAKE, so the 3 places left go to BANTER, HOT_TAKE, STAT.
+  assert.deepEqual(away.candidates.filter((c) => c.attempt === 2 && c.published).map((c) => c.text),
+    ['Petrović made a save. Something.', 'Chelsea fans never stop singing.', 'We never got going.']);
+  assert.equal(away.candidates.filter((c) => c.failed_by === 'not_selected').length, 5);
+  assert.equal(output.calls.generation, 3);
+  // Neurons are recorded per attempt (stub usage: 300 generation + 330 first checker).
+  if (output.estimated_neurons !== null) assert.deepEqual(away.attempts.map((a) => a.estimated_neurons), [630, 630]);
+  assert.deepEqual(away.attempts.map((a) => a.groq.calls), [1, 1]);
+  assert.ok(t.logs.some((l) => /bournemouth: 2\/8 passed, 2 published \(attempt 1\), then 8\/8 passed, 3 published \(attempt 2\): 5 published in all/.test(l)), t.logs.join('\n'));
+});
+
+test('Revision 24: --one-attempt makes one attempt per side, as before', async () => {
+  const t = attemptsSetup();
+  const { output } = await runPipeline({ matchId: '999595', dryRun: true, oneAttempt: true }, t.deps);
+  assert.equal(output.max_attempts_per_side, 1);
+  const away = output.perspectives[1];
+  assert.deepEqual([away.attempts.length, away.published], [1, 2]);
+  assert.equal(output.calls.generation, 2);
+});
+
+test('Revision 24: a second attempt that fails keeps the first attempt and exits non-zero', async () => {
+  const t = attemptsSetup();
+  const generate = t.deps.generateComments;
+  t.deps.generateComments = async (md) => {
+    if (t.calls.generate === 2) { t.calls.generate += 1; throw new Error('HTTP 503 after retries'); }
+    return generate(md);
+  };
+  const { ok, output } = await runPipeline({ matchId: '999595', dryRun: true }, t.deps);
+  assert.equal(ok, false);
+  const away = output.perspectives[1];
+  assert.equal(away.attempts.length, 1);
+  assert.equal(away.published, 2);
+  assert.match(away.error, /^attempt 2: MODEL CALL FAILED: Error: HTTP 503 after retries/);
+  assert.ok(t.logs.some((l) => /bournemouth: 2\/8 passed, 2 published \(attempt 1\); attempt 2: MODEL CALL FAILED/.test(l)), t.logs.join('\n'));
+});
+
+test('--one-attempt goes only with a dry run', () => {
+  const { parseArgs } = require('../scripts/run-pipeline');
+  assert.deepEqual(parseArgs(['--match', '1', '--dry-run', '--one-attempt']), { matchId: '1', dryRun: true, oneAttempt: true });
+  assert.equal(parseArgs(['--match', '1', '--dry-run']).oneAttempt, false);
+  assert.throws(() => parseArgs(['--match', '1', '--one-attempt']), /only applies to a dry run/);
 });
 
 test('dry run: 7 publishable lines become 5 published, the other 2 not_selected', async () => {

@@ -3,11 +3,14 @@
 // Usage:
 //   node scripts/run-pipeline.js                    fetch, then generate for every eligible finished match
 //   node scripts/run-pipeline.js --match <id>       fetch, then only that match (normal eligibility rules)
-//   node scripts/run-pipeline.js --match <id> --dry-run
-//       One attempt per perspective of a finished match, ignoring eligibility (the generation gate
-//       included). Uses the stored FPL player data, if any. Prints every candidate with each step's
-//       result as JSON on stdout (logs go to stderr) and saves the same JSON to
-//       review/dryrun-<id>.json. Skips the fetch and writes nothing to Supabase.
+//   node scripts/run-pipeline.js --match <id> --dry-run [--one-attempt]
+//       Generates for both perspectives of a finished match, ignoring eligibility (the generation
+//       gate included). Like a live run (Revision 24), a side with fewer than MIN_PASSING_COUNT
+//       published lines after its first attempt gets a second, which fills only the places left;
+//       --one-attempt makes one attempt per side, as before Revision 24. Uses the stored FPL player
+//       data, if any. Prints every candidate with each step's result and its attempt as JSON on
+//       stdout (logs go to stderr) and saves the same JSON to review/dryrun-<id>.json. Skips the
+//       fetch and writes nothing to Supabase.
 //
 // Each side's lines go through these steps in order (Revision 21), each seeing only the lines that
 // passed every step before it: generate; format check (with dashes replaced); first checker; code
@@ -40,7 +43,7 @@ const {
   MIN_PASSING_COUNT, MAX_PUBLISHED_PER_PERSPECTIVE, MAX_GENERATION_ATTEMPTS, PLAYER_DATA_READY, CLAIM_CHECK_ENABLED,
 } = require('./lib/constants');
 
-const USAGE = 'usage: node scripts/run-pipeline.js [--match <id> [--dry-run]]';
+const USAGE = 'usage: node scripts/run-pipeline.js [--match <id> [--dry-run [--one-attempt]]]';
 const SIDES = ['home', 'away'];
 const ID_CHUNK = 100;
 const REVIEW_DIR = path.join(__dirname, '..', 'review');
@@ -56,16 +59,18 @@ const FIRST_CHECKER = `first checker (${CHECK_MODEL})`;
 let log = console.log; // a dry run sends logs to stderr so stdout stays pure JSON
 
 function parseArgs(argv) {
-  const opts = { matchId: null, dryRun: false };
+  const opts = { matchId: null, dryRun: false, oneAttempt: false };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--match') opts.matchId = argv[++i] ?? '';
     else if (argv[i] === '--dry-run') opts.dryRun = true;
+    else if (argv[i] === '--one-attempt') opts.oneAttempt = true;
     else throw new Error(`unknown argument "${argv[i]}"`);
   }
   if (opts.matchId !== null && !/^\d+$/.test(opts.matchId)) {
     throw new Error(`--match expects a numeric football-data.org match id, got "${opts.matchId}"`);
   }
   if (opts.dryRun && opts.matchId === null) throw new Error('--dry-run must be combined with --match <id>');
+  if (opts.oneAttempt && !opts.dryRun) throw new Error('--one-attempt only applies to a dry run (--match <id> --dry-run)');
   return opts;
 }
 
@@ -624,6 +629,7 @@ async function runDry(opts, deps) {
     claim_check_enabled: claimCheckOn(deps),
     second_check: { provider: SECOND_CHECK.provider, model: SECOND_CHECK.model, ...(SECOND_CHECK.provider === 'groq' ? GROQ_REASONING : {}) },
     max_published_per_side: MAX_PUBLISHED_PER_PERSPECTIVE,
+    max_attempts_per_side: opts.oneAttempt ? 1 : MAX_GENERATION_ATTEMPTS,
     run_at: new Date().toISOString(),
     perspectives: [],
   };
@@ -639,6 +645,7 @@ async function runDry(opts, deps) {
       ok = false;
     }
   }
+  const maxAttempts = opts.oneAttempt ? 1 : MAX_GENERATION_ATTEMPTS;
   for (const side of SIDES) {
     const { team, opponent } = sideTeams(match, side, teams);
     const matchData = buildMatchData(match, team, opponent, playerData);
@@ -649,29 +656,57 @@ async function runDry(opts, deps) {
       output.perspectives.push(perspective);
       continue;
     }
-    try {
-      const attempt = await runAttempt(matchData, names, stats, deps);
+    // Revision 24: like a live run, a side with fewer than MIN_PASSING_COUNT published lines after an
+    // attempt gets another, up to MAX_GENERATION_ATTEMPTS (--one-attempt: only one). The later attempt
+    // fills only the places left: this side's chosen lines count as live for duplicates and selection,
+    // and every chosen line's opening words, either side's, count for variety.
+    const chosenLines = [];
+    Object.assign(perspective, { attempts: [], returned: 0, passed: 0, published: 0, candidates: [] });
+    for (let number = 1; number <= maxAttempts && perspective.published < MIN_PASSING_COUNT; number += 1) {
+      const before = { neurons: stats.neurons, groq: { ...stats.groq } };
+      let attempt;
+      try {
+        attempt = await runAttempt(matchData, names, stats, deps);
+      } catch (err) {
+        // A dry run that couldn't finish still exits non-zero, since its output is incomplete.
+        stop = stopFor(err);
+        const why = stop ? stop.line : `MODEL CALL FAILED: ${describeFailure(err)}`;
+        perspective.error = number === 1 ? why : `attempt ${number}: ${why}`;
+        log(`${label} ${team.slug}: ${perspective.error}`);
+        ok = false;
+        break;
+      }
       const { publishable, chosen } = finishAttempt(attempt.candidates, {
-        liveKeys: new Set(), openings, liveTypes: [], places: MAX_PUBLISHED_PER_PERSPECTIVE,
+        liveKeys: new Set(chosenLines.map((c) => dedupeKey(c.text))),
+        openings,
+        liveTypes: chosenLines.map((c) => c.type),
+        places: MAX_PUBLISHED_PER_PERSPECTIVE - chosenLines.length,
       });
-      perspective.generation = attempt.generation;
-      perspective.check = attempt.check;
-      perspective.claim_check = attempt.claim_check;
-      perspective.second_check = attempt.second_check;
-      perspective.returned = attempt.candidates.length;
-      perspective.passed = publishable.length;
-      perspective.published = chosen.length;
-      perspective.candidates = attempt.candidates;
-      if (attempt.generation.parse_error) log(`${label} ${team.slug}: ${attempt.generation.parse_error}`);
-      if (attempt.check?.problem) log(`${label} ${team.slug}: checker: ${attempt.check.problem}`);
-      if (attempt.claim_check?.problem) log(`${label} ${team.slug}: claim check: ${attempt.claim_check.problem}`);
-      if (attempt.second_check?.problem) log(`${label} ${team.slug}: ${SECOND_CHECK.name}: ${attempt.second_check.problem}`);
-    } catch (err) {
-      // A dry run that couldn't finish still exits non-zero, since its output is incomplete.
-      stop = stopFor(err);
-      perspective.error = stop ? stop.line : `MODEL CALL FAILED: ${describeFailure(err)}`;
-      log(`${label} ${team.slug}: ${perspective.error}`);
-      ok = false;
+      chosenLines.push(...chosen);
+      for (const c of attempt.candidates) c.attempt = number;
+      perspective.attempts.push({
+        number,
+        returned: attempt.candidates.length,
+        passed: publishable.length,
+        published: chosen.length,
+        estimated_neurons: PROVIDER === 'cloudflare' ? Math.round(stats.neurons - before.neurons) : null,
+        groq: SECOND_CHECK.provider === 'groq'
+          ? { calls: stats.groq.calls - before.groq.calls, input_tokens: stats.groq.input - before.groq.input, output_tokens: stats.groq.output - before.groq.output }
+          : undefined,
+        generation: attempt.generation,
+        check: attempt.check,
+        claim_check: attempt.claim_check,
+        second_check: attempt.second_check,
+      });
+      perspective.returned += attempt.candidates.length;
+      perspective.passed += publishable.length;
+      perspective.published += chosen.length;
+      perspective.candidates.push(...attempt.candidates);
+      const which = maxAttempts > 1 ? ` attempt ${number}` : '';
+      if (attempt.generation.parse_error) log(`${label} ${team.slug}${which}: ${attempt.generation.parse_error}`);
+      if (attempt.check?.problem) log(`${label} ${team.slug}${which}: checker: ${attempt.check.problem}`);
+      if (attempt.claim_check?.problem) log(`${label} ${team.slug}${which}: claim check: ${attempt.claim_check.problem}`);
+      if (attempt.second_check?.problem) log(`${label} ${team.slug}${which}: ${SECOND_CHECK.name}: ${attempt.second_check.problem}`);
     }
     output.perspectives.push(perspective);
   }
@@ -702,9 +737,12 @@ async function runDry(opts, deps) {
   fs.writeFileSync(reviewFile, json);
   if (!deps.quietStdout) process.stdout.write(json);
 
-  const summary = output.perspectives
-    .map((p) => (p.error ? `${p.slug}: ${p.error}` : `${p.slug}: ${p.passed}/${p.returned} passed, ${p.published} published`))
-    .join(', ');
+  const describeSide = (p) => {
+    const tries = (p.attempts ?? []).map((a) => `${a.passed}/${a.returned} passed, ${a.published} published (attempt ${a.number})`);
+    const parts = tries.length > 1 ? `${tries.join(', then ')}: ${p.published} published in all` : tries.join('');
+    return `${p.slug}: ${[parts, p.error].filter(Boolean).join('; ')}`;
+  };
+  const summary = output.perspectives.map(describeSide).join(', ');
   log(`${label} (dry run, nothing written) — ${summary}`);
   printTotals(stats, log, deps, startedAt);
   log(`dry-run output saved to ${path.relative(process.cwd(), reviewFile)}`);
