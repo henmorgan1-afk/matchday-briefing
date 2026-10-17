@@ -40,6 +40,16 @@ test('the prompts use the new placeholders', () => {
   assert.match(PROMPT_VERSION, /^[0-9a-f]{8}$/);
 });
 
+test('Revision 24: the checker has a wrong-side rule, E11, and checks every rule up to it', () => {
+  const checker = loadPrompt('safety-checker-prompt.md');
+  assert.match(checker, /^- E11: talks about a named player, in the comment or its note, as if they\n {2}played for the other team\./m);
+  assert.match(checker, /"Lerma showed why we fear him" fails when Lerma plays for us/);
+  assert.match(checker, /"our\n {2}Martinez" fails when Martinez plays for them/);
+  assert.match(checker, /go through E1 to E11,/);
+  assert.match(checker, /"E11": "pass", "<type rule>"/);
+  assert.doesNotMatch(checker, /E1 to E10|"E10": "pass", "<type rule>"/);
+});
+
 test('the copy check still exempts the reusable idioms', () => {
   assert.deepEqual(copiedFromPrompt('Say what you like, but that was class.'), []);
 });

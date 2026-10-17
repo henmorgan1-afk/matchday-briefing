@@ -64,6 +64,13 @@ Rules for every type — fail the comment if it:
   implication: "Roefs made just one save despite us shipping five goals"
   fails. Stating a player's events neutrally ("Roefs made one save")
   passes.
+- E11: talks about a named player, in the comment or its note, as if they
+  played for the other team. Check the player's team in the facts. One of
+  our players can't be someone "we" fear or who hurt, beat or punished us:
+  "Lerma showed why we fear him" fails when Lerma plays for us. One of
+  their players can't be "ours", or someone who played for us: "our
+  Martinez" fails when Martinez plays for them. Their player's own goal
+  counting for us is not a failure.
 
 Rules by type — check only the rules for the comment's declared type:
 - STAT:
@@ -113,7 +120,7 @@ Rules by type — check only the rules for the comment's declared type:
     accent, money, or any tragedy or disaster. Friendly digs at a club,
     its fans, its songs or its nickname pass.
 
-For each comment in turn, go through E1 to E10, then each rule for that
+For each comment in turn, go through E1 to E11, then each rule for that
 comment's declared type, in order. Give each rule "pass" or "fail"; add a
 short reason only for a rule that fails, as "fail: <short reason>".
 
@@ -127,4 +134,4 @@ A comment's overall result is "fail" if any of its rules failed, otherwise
 
 Return only this JSON, with one entry per comment, keyed by its number, and
 in each one entry per rule you checked:
-{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail" | "unsure", "reason": "<short reason if it failed or was unsure, otherwise empty>"}, "2": {...}, ...}
+{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E11": "pass", "<type rule>": "pass"}, "result": "pass" | "fail" | "unsure", "reason": "<short reason if it failed or was unsure, otherwise empty>"}, "2": {...}, ...}

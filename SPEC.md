@@ -1671,6 +1671,7 @@ Per perspective, per match: **8 comments — 3 `STAT` / 1 `BANTER` / 4 `HOT_TAKE
   - **No goal order or timing** beyond what the half-time and full-time scores show ("while we were already up", "late winner", "we matched them goal for goal"). Any claim about the goals in either half must match `first_half_goals` or `second_half_goals` (§3.5). "Going 2-3 down at the break and still scoring twice ourselves" fails when both goals came before the break. A line that mentions goals by both sides may use order words ("then", "after", "before", "first", "equaliser") only when the goals per half prove that order: "then Cunha gets one and Martinez puts through his own net" fails when both came in the same half (checker rule E5, Revision 9). "Came from behind" is allowed only when `half_time_comeback` is true.
   - **No time words tied to when the line is read.** People read a briefing days after the match, so no "today", "tonight", "yesterday", "last night", "this weekend" or "this morning".
   - **No contradicting the match data**, even in an opinion. A line calling a first half poor when the team led 2-0 at the break fails.
+  - **No player on the wrong side (Revision 24).** A line or note never talks about one of our players as if they played for the other team (Palace's "Lerma showed why we fear him", about Palace's own scorer, in the go-live test), or about one of theirs as if they played for us ("our Martinez" from Bournemouth). This is checker rule E11. The code gate catches only "our" straight before an opposition player's name (Revision 19).
   - **Code gate.** After the model checker, deterministic code drops any line that breaks a number rule (`STAT` numbers must be in the match data, including each listed player's goal and save counts; since Revision 21 a `HOT_TAKE` or `BANTER` line and its note hold no number at all), contains a banned term, breaks a name rule, copies five words in a row from the generation prompt, or has a note that says "data", "player list" or "players". These are the rules `check-p1.js` asserts (§3.1 step 4, §9).
     - **Name rules (Revision 9).** The gate looks for every FPL player's name in the line. A name is the `web_name`, the `web_name` without its initial, or the full name (`known_name`, otherwise `first_name` and `second_name`). It matches whole words, case-sensitively, ignoring accents.
     - Each name found must belong to a player in this perspective's `players` (N1, N2). A name shared by two players in `players` counts only as part of a full name.
@@ -1921,6 +1922,13 @@ Rules for every type — fail the comment if it:
   implication: "Roefs made just one save despite us shipping five goals"
   fails. Stating a player's events neutrally ("Roefs made one save")
   passes.
+- E11: talks about a named player, in the comment or its note, as if they
+  played for the other team. Check the player's team in the facts. One of
+  our players can't be someone "we" fear or who hurt, beat or punished us:
+  "Lerma showed why we fear him" fails when Lerma plays for us. One of
+  their players can't be "ours", or someone who played for us: "our
+  Martinez" fails when Martinez plays for them. Their player's own goal
+  counting for us is not a failure.
 
 Rules by type — check only the rules for the comment's declared type:
 - STAT:
@@ -1970,7 +1978,7 @@ Rules by type — check only the rules for the comment's declared type:
     accent, money, or any tragedy or disaster. Friendly digs at a club,
     its fans, its songs or its nickname pass.
 
-For each comment in turn, go through E1 to E10, then each rule for that
+For each comment in turn, go through E1 to E11, then each rule for that
 comment's declared type, in order. Give each rule "pass" or "fail"; add a
 short reason only for a rule that fails, as "fail: <short reason>".
 
@@ -1984,7 +1992,7 @@ A comment's overall result is "fail" if any of its rules failed, otherwise
 
 Return only this JSON, with one entry per comment, keyed by its number, and
 in each one entry per rule you checked:
-{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E10": "pass", "<type rule>": "pass"}, "result": "pass" | "fail" | "unsure", "reason": "<short reason if it failed or was unsure, otherwise empty>"}, "2": {...}, ...}
+{"1": {"rules": {"E1": "pass", "E2": "pass", ..., "E11": "pass", "<type rule>": "pass"}, "result": "pass" | "fail" | "unsure", "reason": "<short reason if it failed or was unsure, otherwise empty>"}, "2": {...}, ...}
 ```
 
 **`prompts/claim-check-prompt.md`** (Revision 21; filled per side by `claim-check.js`, which never shows it the scores or counts):
