@@ -1404,6 +1404,86 @@ Revision 23 found the pipeline not ready to go live. The project owner approved 
 - **Cost.** With second attempts for one side each, both matches cost about 2,100 neurons, 650–750 per attempt. That's about 4 matches in any 24 hours, which the re-test plan allows for.
 - **Not ready to go live:** two published factual errors, against the zero required. E11 in the checker prompt didn't stop a wrong-side line. Catching these probably needs code, not another rule. For example, the gate could flag a line from our side that names one of their red-carded or own-goal players together with "cost us", "hurt us" or "for us", and the reverse. A line that says "defeat" or "lost" after a draw (or "won" after a loss) could be flagged the same way. That's for the next round; nothing changed after these runs.
 
+### Revision 25 (17 Oct 2026, round 6: code checks for the errors both checkers passed)
+
+Revision 24's sanity runs published two factual errors that both checkers passed: Tottenham's "Kinsky's reflexes saved us from a bigger defeat." after a 1-1 draw, and Man United's "Bentancur's red card cost us a win." about a Spurs player. The go-live test had published a third of the same kind, Palace's "Lerma showed why we fear him." The project owner approved code checks for them. This round was offline only: no dry runs and no model calls. Branch `free-to-run`. `scripts/lib/code-gate.js`, `check-p1.js` (its pass message), both prompts, the tests and this file change. §3.3, §3.4 and §9 are updated to match. `PROMPT_VERSION` is now `f1d6a959` (it was `94476e3f`).
+
+**The rules** (`code-gate.js`, part of the code gate, so `check-p1.js` applies them too). Rules 1 and 2 apply to a line and its note, in every type, sentence by sentence, on accent-folded, lower-cased text.
+
+1. **Result words must fit the result** (`resultWordProblems`).
+   - After a draw, "defeat", "lost", "loss", "beaten", "won", "win" and "victory" fail.
+   - After a win, "defeat", "lost", "loss", "draw" and "drew" fail. After a loss, "won", "win", "victory", "draw" and "drew" fail.
+   - **Whose result.** After a win or a loss, a word about the other team is judged against their result, so "Chelsea won 5-1" from Bournemouth passes. The word is about:
+     - the team named in "for them" or "for Chelsea" straight after it; otherwise
+     - the nearest reference before it in its sentence, then in an earlier sentence. A reference is a pronoun ("we", "they"...), a team's name or any word of it over 3 letters that the other team's name doesn't share ("United"), or a listed player's name, for that player's team. A reference straight after "at", "to", "against", "by", "over", "from", "than", "with", "v", "vs", "beat", "beating" or "past" is an object, so it's skipped ("away at City, lost 5-3"); otherwise
+     - us.
+   - **Not judged:**
+     - A word with a hedge among the 3 words before it: could, should, would, might, must (and "-'ve"), can, will, deserved (and forms), nearly, almost, cost, denied, robbed, possible, potential, no, not, never, nobody, neither, nothing, without, or any "n't" word. So "should have won", "deserved to win", "no defeat" and "cost us a win" pass.
+     - "to win" and "to draw", as an aim.
+     - The idioms "win, lose or draw", "win or lose", "lose or draw", and "between a … and a …".
+     - A result word followed by the ball, back, possession, a corner, a free kick, a penalty, the battle, duels, headers, the toss, count, track, touch, the plot, for words, our or their heads, shape, way, nerve or cool, focus, composure, control, discipline, momentum, the lead, of, level, at the break or at half-time.
+     - "draw" or "drew" followed by on, from or upon.
+     - A word after "at a" ("at a loss"), or after "first half", "second half", "half-time" or "at the break" (a half's score, not the match's).
+     - Plurals.
+   - "beaten" is checked only after a draw, and "defeated" not at all: after a win or a loss each is as often about the other team ("we've beaten them") as about us.
+2. **A player's event can't help or hurt the wrong side** (`playerSideProblems`), using the listed players, their teams and events.
+   - A "bad for us" phrase ("cost us", "hurt us", "punished us", "killed us", "we fear", "scare us", with their other tenses) fails when tied to one of our players' goals or saves, or one of their players' red card, own goal or missed penalty.
+   - A "good for us" phrase ("for us", "gave us", "gift", "helped us", "saved us", "kept us") fails when tied to one of their players' goals or saves, or one of our players' red card, own goal or missed penalty.
+   - **Which player.** A phrase is tied to the nearest player named before it in its sentence, or failing that the first named after it. A name two listed players share is skipped.
+   - **Which event.** The player's events that the sentence mentions are the ones judged, or all of them if it mentions none. "Red", "sent off" and "dismissal" mention a red card. "Own goal" and "own net" (any dash, including the model's non-breaking hyphen) mention an own goal. "Save", "reflexes" and "stops" mention saves. "Goal", "scored", "brace", "hat-trick", "finish", "strike", "netted", "equaliser" and "winner" mention a goal. The line fails only if every judged event cuts the wrong way.
+   - **Not judged:**
+     - A phrase with a hedge among the 2 words before it ("didn't cost us").
+     - "for us" after "too <word>" or after a word for something bad: bad, worse, worst, tough, hard, difficult, nightmare, grim, horrible, awful, disaster, disastrous, painful, bleak, long, miserable, sad, gutting, frustrating, cruel, loss, defeat, blow, setback, beating, hammering or thrashing, with up to one word between. So "too good for us", "a long night for us" and "a two-nil loss for us" pass.
+     - "gift" followed by them, their or "it to them".
+     - "kept us" followed by out, quiet, at bay or in check.
+3. **"typical"** joins the other-match words (E3, `STAT` and `HOT_TAKE` only), after Man United published "Typical." twice for 560583.
+
+**Prompts.**
+- **Generation prompt:** two new rules after "Never contradict the match data": result words must fit the result, and keep every player on their own team, with which way each event cuts. It also has "no "typical"" among the trend examples, and "typical" in the closing checklist.
+- **Checker prompt:** E3 names "typical". E7 covers result words that don't fit the result ("saved us from a bigger defeat" after a draw). E11 says which way each event cut ("Bentancur's red card cost us" fails when Bentancur plays for them).
+- The mix, tail and §3.4 checks pass.
+
+**The false-positive scan** (read-only, 17 Oct 2026; the script is deleted).
+- **What was scanned:** 806 distinct lines. 270 are every live comment in Supabase. 536 more are every published line in 51 `review/golive-*.json` and `review/dryrun-*.json` files. Files from before Revision 21 have no `published` flag, so their passing lines were counted, since a live run would have written them.
+- **Each line's facts:** each line was checked against its match's stored data and the stored player names.
+
+| | rule 1, result words | rule 2, wrong side | rule 3, "typical" |
+|---|---|---|---|
+| First versions | 21 lines | 3 lines | 2 lines |
+| … of which errors | Kinsky's "bigger defeat"; Bentancur's "cost us a win" (a wrong line, but caught on the wrong grounds) | Lerma, Bentancur | both Man United "Typical." lines (560583: go-live and Revision 24) |
+| … of which correct lines | 19 | 1 | 0 |
+| After narrowing | 1: Kinsky | 2: Lerma, Bentancur | 2: the same |
+
+- **The 19 correct lines rule 1 first failed, and the narrowing for each kind:**
+  - "win, lose or draw" or "win or lose", 5 lines (Sunderland's live BANTER among them): the idioms are skipped.
+  - Whose result, 5 lines. Man City's live "Donnarumma made one save. Walton made four. Still lost." and Fulham's live "Hull's keeper made five saves. Still lost." are about the other team, named in an earlier sentence. Sunderland's "away at City - lost 5-3", "5-3 to them … straight loss" and "away at City shows character, even in a defeat" name the other team as an object. Fixed by player names as references, earlier sentences and the object rule.
+  - Plurals, 3 lines: "turning draws like that into wins", and two 560582 notes "Draws on perspective_side…". Plurals aren't judged.
+  - "to win" as an aim, 2 lines: "their divine right to win every time" and "a game you expect to win".
+  - Modals and adjectives, 2 lines: Spurs' "Red Devils think chanting can win matches", and a Brentford note's "possible win". These added "can", "will" and "possible" (with "potential") to the hedges.
+  - "Lammens was honestly the difference between a draw and a defeat for me": the "between … and …" idiom.
+  - A half, 1 line: a Liverpool note's "a level draw at the break". Results at half-time are skipped.
+- **Bentancur's "cost us a win" under rule 1:** "cost us a win" is a might-have-been, which would be right about one of United's own players. So "cost" (with "denied" and "robbed") became a hedge, and rule 2 is what fails that line.
+- **The 1 correct line rule 2 first failed:** Everton's live "Neto scored both Chelsea goals in a two-nil loss for us." "For us" after a loss is bad for us, so loss, defeat, blow, setback, beating, hammering and thrashing joined the words before "for us" that aren't good for us.
+- **A wider check:** I also ran the rules on every candidate in the review files, unpublished ones included: 982 distinct lines. It found two more correct lines that the first narrowing still failed, Man City's note "first‑half scoreless draw" and Man United's "Spurs lost composure", which added the half rule and "composure", "control", "discipline", "momentum" and "the lead". It also catches Man United's BANTER "Cottagers think their riverside vibe scares us, but we still win." after a draw, which reads as this match's result, so that stays a fail. And it catches Liverpool's unpublished "A.Becker made one save, yet we conceded three. Typical.", which is right.
+- **Confirmed:** after narrowing, the rules fail all three known errors (Lerma, Bentancur and "bigger defeat") and no correct published or live line.
+
+**Limits.**
+- Rule 2 needs the player named in the same sentence as the phrase, so "Lerma scored. He scares us." isn't caught.
+- Nicknames ("Spurs", "the Blues") aren't team references, so a result word whose only subject is a nickname is judged as ours.
+- After a win or a loss, "beaten" and "defeated" aren't judged.
+- The narrowing was fitted to 982 lines. A new phrasing can still slip through, or fail a correct line.
+
+**Tests** (`npm run test:offline`): 93 pass (86 before). The new `tests/result-side.test.js`:
+- the three known errors fail the gate;
+- the brief's must-pass lines pass: Sunderland's "Struijk's red was a gift for us." (and "red card"), and Fulham's "Martinez's own‑goal was a gift we didn't need." with the non-breaking hyphen;
+- both phrase kinds work each way round, judging the event a sentence names and tying the phrase to the nearest player before it, and the note is checked too;
+- rule 1 after a draw, a win and a loss, with hypotheticals, idioms and whose result;
+- "typical" fails `STAT` and `HOT_TAKE` but not `BANTER`.
+
+The prompt tests cover the new prompt text. One existing pipeline test changed: its stub reuses Chelsea's lines for Bournemouth, so "Won 5-1 at home." now fails the gate for Bournemouth, who lost.
+
+**Not tested:** no model saw the new prompts (no dry runs, as the brief said). Revision 24's re-test plan still applies, and the next go-live test is the first live check of these rules and prompts.
+
 ## 1. Architecture
 
 ```
@@ -1735,7 +1815,7 @@ Per perspective, per match: **8 comments — 3 `STAT` / 1 `BANTER` / 4 `HOT_TAKE
   - **No goal order or timing** beyond what the half-time and full-time scores show ("while we were already up", "late winner", "we matched them goal for goal"). Any claim about the goals in either half must match `first_half_goals` or `second_half_goals` (§3.5). "Going 2-3 down at the break and still scoring twice ourselves" fails when both goals came before the break. A line that mentions goals by both sides may use order words ("then", "after", "before", "first", "equaliser") only when the goals per half prove that order: "then Cunha gets one and Martinez puts through his own net" fails when both came in the same half (checker rule E5, Revision 9). "Came from behind" is allowed only when `half_time_comeback` is true.
   - **No time words tied to when the line is read.** People read a briefing days after the match, so no "today", "tonight", "yesterday", "last night", "this weekend" or "this morning".
   - **No contradicting the match data**, even in an opinion. A line calling a first half poor when the team led 2-0 at the break fails.
-  - **No player on the wrong side (Revision 24).** A line or note never talks about one of our players as if they played for the other team (Palace's "Lerma showed why we fear him", about Palace's own scorer, in the go-live test), or about one of theirs as if they played for us ("our Martinez" from Bournemouth). This is checker rule E11. The code gate catches only "our" straight before an opposition player's name (Revision 19).
+  - **No player on the wrong side (Revision 24).** A line or note never talks about one of our players as if they played for the other team (Palace's "Lerma showed why we fear him", about Palace's own scorer, in the go-live test), or about one of theirs as if they played for us ("our Martinez" from Bournemouth). This is checker rule E11. The code gate catches "our" straight before an opposition player's name (Revision 19) and, since Revision 25, a player's event tied to the wrong side ("Bentancur's red card cost us" from United, when Bentancur plays for Spurs), and a result word that doesn't fit the result ("a bigger defeat" after a draw).
   - **Code gate.** After the model checker, deterministic code drops any line that breaks a number rule (`STAT` numbers must be in the match data, including each listed player's goal and save counts; since Revision 21 a `HOT_TAKE` or `BANTER` line and its note hold no number at all), contains a banned term, breaks a name rule, copies five words in a row from the generation prompt, or has a note that says "data", "player list" or "players". These are the rules `check-p1.js` asserts (§3.1 step 4, §9).
     - **Name rules (Revision 9).** The gate looks for every FPL player's name in the line. A name is the `web_name`, the `web_name` without its initial, or the full name (`known_name`, otherwise `first_name` and `second_name`). It matches whole words, case-sensitively, ignoring accents.
     - Each name found must belong to a player in this perspective's `players` (N1, N2). A name shared by two players in `players` counts only as part of a full name.
@@ -2404,9 +2484,12 @@ Every check prints `PASS check-pN: <reason>` or `FAIL check-pN: <reason>` and ex
   - **prompt copying and notes (Revision 9):** no passing line's text repeats five or more words in a row from the generation prompt, apart from its three long reusable idioms (§3.3), and no passing line's note says "match data", "data", "player list" or "players". **Variety:** no two passing lines, across both perspectives, open with the same three words.
   - **Wording (Revision 20),** in the line and in its note:
     - **Banned tails:** none of the tails the generation prompt names ("win or lose", "bless them", "rough one", "no sugar coating it", "proper travelling support", "whatever happens on the pitch"), anywhere. "rain or shine" and "no contest" fail only after a comma, as a tail. `generate-comments.js` refuses to generate if the prompt's tail list and the gate's stop agreeing.
-    - **Other matches (E3),** `STAT` and `HOT_TAKE` only: none of "finally", "at last", "for once", "as usual", "as always", "as ever", "once again", "yet again", "unbeaten", "winning run", "losing run", "winning streak" or "losing streak".
+    - **Other matches (E3),** `STAT` and `HOT_TAKE` only: none of "finally", "at last", "for once", "as usual", "as always", "as ever", "once again", "yet again", "unbeaten", "winning run", "losing run", "winning streak", "losing streak" or (Revision 25) "typical".
+  - **Results and sides (Revision 25),** in the line and in its note, every type:
+    - **Result words fit the result.** After a draw, no "defeat", "lost", "loss", "beaten", "won", "win" or "victory". After a win or a loss, no word for a different result about whichever team it's about ("defeat", "lost", "loss", "draw", "drew" after a win; "won", "win", "victory", "draw", "drew" after a loss). Hypotheticals, denials and might-have-beens, idioms and plurals don't count. The details are in Revision 25.
+    - **No player's event on the wrong side.** A "bad for us" phrase ("cost us", "hurt us", "punished us", "killed us", "we fear", "scare us") tied to one of our players' goals or saves, or one of their players' red card, own goal or missed penalty, fails. So does a "good for us" phrase ("for us", "gave us", "gift", "helped us", "saved us", "kept us") tied to one of their players' goals or saves, or one of our players' red card, own goal or missed penalty.
     - **Positions (E9):** none of "keeper", "goalkeeper", "goalie", "defender", "striker", "midfielder", "winger", "full-back", "centre-back", "left-back", "right-back", "wing-back", "centre-forward" or "centre-half", singular or plural, with or without the hyphen. A team unit ("our defence", "their midfield") is fine.
-  - The number check, banned terms, name rules, wording rules, copy check and note words are the pipeline's own code gate (`scripts/lib/code-gate.js`, §3.1 step 4). `check-p1.js` re-applies them to the stored match and its stored events, so a line that slipped past the gate still fails the check. It also prints every line the gate dropped, since each one is a line the model checker passed.
+  - The number check, banned terms, name rules, wording rules, result and side rules, copy check and note words are the pipeline's own code gate (`scripts/lib/code-gate.js`, §3.1 step 4). `check-p1.js` re-applies them to the stored match and its stored events, so a line that slipped past the gate still fails the check. It also prints every line the gate dropped, since each one is a line the model checker passed.
   - Nothing is written to Supabase (checked only when it runs the dry run itself).
   - It also prints every line a step after the first checker dropped (the code gate, the claim check, the second checker, "unsure", variety and selection), since each is a line the first checker passed.
 - **Offline tests (Revision 21):** `npm run test:offline` runs `tests/*.test.js` with Node's built-in test runner (Node 21 or later, for the glob). Every model call is stubbed, any network call fails the test, and Supabase is an in-memory fake, so they cost nothing and change nothing. They cover the fact sheet, the number rule, the claim comparison, the Groq client's pacing and stops, both checkers' "unsure" and fail-closed verdicts, the Cloudflare fallback, the selection, the pipeline's stops, `promptMixProblems`, `promptTailProblems`, and each `prompts/*.md` file matching its §3.4 block byte for byte.
