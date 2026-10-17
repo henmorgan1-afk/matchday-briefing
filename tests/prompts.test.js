@@ -57,7 +57,7 @@ test('Revision 24: the generation prompt ends with a checklist of words the code
   const checklist = prompt.slice(prompt.indexOf('Before you answer, check all 8 lines and their notes:'));
   assert.ok(prompt.indexOf('Return JSON: a list of 8 objects') < prompt.indexOf('Before you answer'), 'the checklist comes last');
   const words = [...checklist.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(words, ['finally', 'at last', 'today', 'tonight', 'keeper', 'goalkeeper']);
+  assert.deepEqual(words, ['finally', 'at last', 'typical', 'today', 'tonight', 'keeper', 'goalkeeper']);
   assert.match(checklist, /No phrase is used in more than one line\./);
   assert.ok(checklist.endsWith('own words.\n'));
   // Every word on the list fails a STAT or HOT_TAKE line at the code gate.
@@ -69,6 +69,19 @@ test('Revision 24: the generation prompt ends with a checklist of words the code
   }
   // The prompt's own hedge examples no longer offer "If I'm being honest" or "I'll be honest".
   assert.doesNotMatch(prompt, /being honest|I'll be honest|sieve/i);
+});
+
+test('Revision 25: both prompts state the result-word, whose-event and "typical" rules', () => {
+  const generation = loadPrompt('generation-prompt.md');
+  const checker = loadPrompt('safety-checker-prompt.md');
+  assert.match(generation, /^- Result words must fit the result\. After a draw, never "win", "won",\n {2}"victory", "defeat", "lost", "loss" or "beaten" about this match\./m);
+  assert.match(generation, /"Could have won" is fine\./);
+  assert.match(generation, /^- Keep every player on their own team\. Our players' goals and saves never\n {2}cost us or hurt us, and we don't fear them\./m);
+  assert.match(generation, /no "finally clicking", no "typical"\)/);
+  assert.match(checker, /^- E7: contradicts the match data, even as an opinion\. That includes a\n {2}result word that doesn't fit the result/m);
+  assert.match(checker, /\("saved us from a bigger defeat" after a draw\)/);
+  assert.match(checker, /\("Bentancur's red card cost us" fails when Bentancur plays for them\)/);
+  assert.match(checker, /"finally clicking", "typical"\)/);
 });
 
 test('the copy check still exempts the reusable idioms', () => {

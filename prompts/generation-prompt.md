@@ -35,7 +35,7 @@ Rules for every comment:
   other matches this season or in past seasons (no "champions elect", no
   "mid-table", no "the big six", no "the recurring issue all season"). That
   includes trends, which imply other matches (no "really starting to
-  organise itself", no "finally clicking"). A clearly personal superlative
+  organise itself", no "finally clicking", no "typical"). A clearly personal superlative
   opinion, like "worst first half I've seen from us all season", is fine.
 - Never name a venue, stadium or ground.
 - Never say what position a player plays (no "up top", no "at the back"):
@@ -56,6 +56,15 @@ Rules for every comment:
   "today", "tonight", "yesterday", "last night", "this weekend", "this
   morning", "last week", "recently" or "back in September".
 - Never contradict the match data, even in an opinion.
+- Result words must fit the result. After a draw, never "win", "won",
+  "victory", "defeat", "lost", "loss" or "beaten" about this match. After a
+  win or a loss, never a word for a different result about either team.
+  "Could have won" is fine.
+- Keep every player on their own team. Our players' goals and saves never
+  cost us or hurt us, and we don't fear them. Their players' red cards, own
+  goals and missed penalties never cost us or hurt us either. The other way
+  round, their goals and saves never helped us, gave us anything or saved
+  us, and nor did our red cards, own goals or missed penalties.
 
 Write exactly 8 comments in this mix:
 - 3 STAT: a short line whose every specific claim is drawn directly from
@@ -149,6 +158,6 @@ Return JSON: a list of 8 objects, each { "type", "text", "note" }.
 
 Before you answer, check all 8 lines and their notes:
 - None uses any of these words, in the line or in its note: "finally",
-  "at last", "today", "tonight", "keeper", "goalkeeper".
+  "at last", "typical", "today", "tonight", "keeper", "goalkeeper".
 - No phrase is used in more than one line. Say each thing once, in its
   own words.

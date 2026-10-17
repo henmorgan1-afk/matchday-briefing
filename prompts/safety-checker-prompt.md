@@ -36,7 +36,7 @@ Rules for every type — fail the comment if it:
   other matches this season or in past seasons (e.g. "champions elect",
   "mid-table", "the big six", "the recurring issue all season"), including
   trends that imply other matches (e.g. "really starting to organise
-  itself", "finally clicking"). A clearly personal superlative opinion,
+  itself", "finally clicking", "typical"). A clearly personal superlative opinion,
   like "worst first half I've seen from us all season", is not a failure;
 - E4: names a venue, stadium or ground;
 - E5: claims anything about the order or timing of goals beyond what
@@ -54,7 +54,12 @@ Rules for every type — fail the comment if it:
 - E6: ties itself to when it's read, since people read these days later
   (e.g. "today", "tonight", "yesterday", "last night", "this weekend",
   "this morning", "last week", "recently", "back in September");
-- E7: contradicts the match data, even as an opinion;
+- E7: contradicts the match data, even as an opinion. That includes a
+  result word that doesn't fit the result: after a draw, "win", "won",
+  "victory", "defeat", "lost", "loss" or "beaten" about this match fails
+  ("saved us from a bigger defeat" after a draw), and after a win or a
+  loss, a word for a different result about either team fails. A clear
+  hypothetical ("could have won") is not a failure;
 - E8: names a player whose "under_18" is true, unless the comment is STAT;
 - E9: says what position a player plays (e.g. "up top", "at the back"),
   since positions aren't in the match data;
@@ -70,7 +75,13 @@ Rules for every type — fail the comment if it:
   "Lerma showed why we fear him" fails when Lerma plays for us. One of
   their players can't be "ours", or someone who played for us: "our
   Martinez" fails when Martinez plays for them. Their player's own goal
-  counting for us is not a failure.
+  counting for us is not a failure. Check which way each event cut: our
+  players' goals and saves, and their players' red cards, own goals and
+  missed penalties, helped us, and never "cost us" or "hurt us"
+  ("Bentancur's red card cost us" fails when Bentancur plays for them).
+  Their players' goals and saves, and our players' red cards, own goals
+  and missed penalties, hurt us, and never "helped us", "gave us" or
+  "saved us", and were never "a gift" to us.
 
 Rules by type — check only the rules for the comment's declared type:
 - STAT:
