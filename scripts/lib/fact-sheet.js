@@ -7,6 +7,13 @@
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const goals = (n) => plural(n, 'goal');
 
+// "a morning", "an afternoon" or "an evening", from a "15:00" kickoff time in UK time: before 12:00 is
+// morning, before 17:00 afternoon, and 17:00 or later evening.
+function partOfDay(kickoffTime) {
+  const hour = Number(kickoffTime.slice(0, 2));
+  return hour < 12 ? 'a morning' : hour < 17 ? 'an afternoon' : 'an evening';
+}
+
 // "a", "a and b", "a, b and c"
 function listing(parts) {
   return parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
@@ -79,6 +86,8 @@ function buildFactSheet(md) {
   const matchday = md.matchday == null ? '' : `, matchday ${md.matchday}`;
   lines.push(`The match was played on ${md.kickoff_date}, in the ${md.competition}${matchday}.`);
   if (md.matchday == null) lines.push("The matchday isn't known.");
+  // Revision 24: the go-live test had "night" for 14:00 and 15:00 kickoffs.
+  lines.push(`It kicked off at ${md.kickoff_time} UK time, so it was ${partOfDay(md.kickoff_time)} match.`);
 
   if (!md.players) {
     lines.push("Who scored isn't known, and nor is anything else any player did, so no player can be named.");

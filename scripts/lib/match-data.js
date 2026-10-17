@@ -36,6 +36,15 @@ function formatKickoffDate(isoTimestamp) {
   return `${weekday} ${day} ${MONTHS[month - 1]} ${year}`;
 }
 
+// "15:00", the kickoff time in Europe/London (UK time), 24-hour (Revision 24).
+function formatKickoffTime(isoTimestamp) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(isoTimestamp));
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get('hour')}:${get('minute')}`;
+}
+
 // "2026-09-19", the London calendar date, for log lines.
 function londonIsoDate(isoTimestamp) {
   const { year, month, day } = londonDate(isoTimestamp);
@@ -153,6 +162,7 @@ function buildMatchData(match, perspectiveTeam, opponentTeam, playerData = null)
     competition: COMPETITION_NAMES[match.competition] ?? match.competition,
     matchday: match.matchday ?? null,
     kickoff_date: formatKickoffDate(match.kickoff_at),
+    kickoff_time: formatKickoffTime(match.kickoff_at),
     perspective_team: perspectiveTeam.short_name,
     opponent: opponentTeam.short_name,
     perspective_side: side,
@@ -232,6 +242,7 @@ module.exports = {
   isUnder18,
   matchDataJson,
   formatKickoffDate,
+  formatKickoffTime,
   londonIsoDate,
   loadPrompt,
   fillTemplate,

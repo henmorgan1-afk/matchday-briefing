@@ -2085,6 +2085,7 @@ Return only this JSON, with one entry per comment, keyed by its number:
   "competition": "Premier League",
   "matchday": 5,
   "kickoff_date": "Sun 20 Sep 2026",
+  "kickoff_time": "14:00",
   "perspective_team": "Sunderland",
   "opponent": "Man City",
   "perspective_side": "away",
@@ -2126,7 +2127,7 @@ Return only this JSON, with one entry per comment, keyed by its number:
 ```
 
 - Team names are `teams.short_name`.
-- `kickoff_date` is formatted in the Europe/London timezone.
+- `kickoff_date` is formatted in the Europe/London timezone. `kickoff_time` (Revision 24) is the kickoff in UK time (Europe/London), 24-hour, such as `"15:00"`. It isn't one of the numbers a `STAT` may use.
 - `result` is `won`, `drew` or `lost`; `points_earned` is 3, 1 or 0; `winning_margin` is the absolute goal difference (0 for a draw).
 - `half_time`, `half_time_state` (`leading`, `level` or `trailing`) and `half_time_comeback` (trailed at half time and didn't lose) are `null` when the half-time score isn't stored. `matchday` is `null` when the API didn't provide it.
 - **`first_half_goals` and `second_half_goals`** (Revision 9) are each side's goals in each half. They're worked out from the half-time and full-time scores, so `first_half_goals` repeats `half_time`. Both are `null` when the half-time score isn't stored. They let a claim about either half be checked (E5): Sunderland scored 2 before the break and 1 after it.
@@ -2165,6 +2166,7 @@ In the second half, Chelsea scored 3 goals and Bournemouth scored 1 goal.
 Neither team kept a clean sheet.
 Neither team came from behind after losing at half-time.
 The match was played on Sat 10 Oct 2026, in the Premier League, matchday 6.
+It kicked off at 15:00 UK time, so it was an afternoon match.
 Evanilson plays for Bournemouth and scored 1 goal.
 Petrović plays for Bournemouth and made 1 save.
 Henderson plays for Chelsea and scored 2 goals.
@@ -2178,6 +2180,7 @@ Nothing else is known about this match: not when any goal went in, who made assi
 - The score lists the home team first. Each team's goals and the match total are separate sentences, so they can't be mixed up.
 - Without a half-time score it says "The half-time score isn't known, so nobody knows how many goals came in either half." and that whether either team came from behind isn't known. Without a matchday it says so.
 - A clean sheet names the team that kept it; coming from behind names the team that did it.
+- The kickoff time (Revision 24) is in UK time, with whether it was a morning (before 12:00), afternoon (before 17:00) or evening (17:00 or later) match. The go-live test had "night" for 14:00 and 15:00 kickoffs.
 - An own goal says which team it counted for ("Martinez plays for Man United and scored 1 own goal, which counted for Fulham."). An under-18 player is marked ("…, is under 18, and made 2 saves."). With no player data it says no player can be named.
 - Code writes facts only, never a line or a note. The claim check's prompt doesn't get the fact sheet: it never sees the scores or counts.
 - **Deliberately excluded:** league position, the table, form and season records. They change after later matches, so a cached line quoting them would go stale. Also excluded: assists, yellow cards, FPL's bonus, `bps` and `defensive_contribution`, and players with no event (Revision 9).

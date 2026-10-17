@@ -1,7 +1,7 @@
 // Idea 1: the plain-English fact sheet (SPEC.md §3.5, Revision 21).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { blockNetwork, side, CHELSEA, BOURNEMOUTH } = require('./helpers');
+const { blockNetwork, side, CHELSEA, BOURNEMOUTH, match560595 } = require('./helpers');
 const { buildMatchData } = require('../scripts/lib/match-data');
 const { buildFactSheet } = require('../scripts/lib/fact-sheet');
 
@@ -27,6 +27,22 @@ test('560595 from Bournemouth: team names, separate goal sentences, half-time, p
   ]) assert.ok(sheet.includes(sentence), `missing: ${sentence}\n---\n${sheet}`);
   assert.match(sheet, /Nothing else is known about this match: not when any goal went in, who made assists, yellow cards, substitutions, or what position anyone plays\.$/);
   assert.doesNotMatch(sheet, /perspective|opponent/i);
+});
+
+test('Revision 24: the kickoff time in UK time, and whether it was an afternoon or evening match', () => {
+  // 560595-style kickoff, 14:00 UTC on 10 Oct: 15:00 in British Summer Time.
+  const { matchData } = side('home');
+  assert.equal(matchData.kickoff_time, '15:00');
+  assert.ok(buildFactSheet(matchData).includes('The match was played on Sat 10 Oct 2026, in the Premier League, matchday 6.\nIt kicked off at 15:00 UK time, so it was an afternoon match.'));
+  const at = (kickoffAt) => buildFactSheet(buildMatchData({ ...match560595(), kickoff_at: kickoffAt }, CHELSEA, BOURNEMOUTH, null));
+  assert.match(at('2026-10-10T13:00:00Z'), /It kicked off at 14:00 UK time, so it was an afternoon match\./);
+  assert.match(at('2026-10-10T15:30:00Z'), /It kicked off at 16:30 UK time, so it was an afternoon match\./);
+  assert.match(at('2026-10-10T16:30:00Z'), /It kicked off at 17:30 UK time, so it was an evening match\./);
+  assert.match(at('2026-10-10T19:00:00Z'), /It kicked off at 20:00 UK time, so it was an evening match\./);
+  assert.match(at('2026-10-10T10:30:00Z'), /It kicked off at 11:30 UK time, so it was a morning match\./);
+  // After the clocks go back (25 Oct 2026), UK time is UTC.
+  assert.match(at('2026-12-05T12:30:00Z'), /It kicked off at 12:30 UK time, so it was an afternoon match\./);
+  assert.match(at('2026-12-05T20:00:00Z'), /It kicked off at 20:00 UK time, so it was an evening match\./);
 });
 
 test('own goal says which team it counted for; under-18 player marked; half-time unknown', () => {
