@@ -1484,6 +1484,127 @@ The prompt tests cover the new prompt text. One existing pipeline test changed: 
 
 **Not tested:** no model saw the new prompts (no dry runs, as the brief said). Revision 24's re-test plan still applies, and the next go-live test is the first live check of these rules and prompts.
 
+### Revision 26 (20 Oct 2026, go-live test 2: the re-test)
+
+Revision 24's re-test plan, run to the project owner's brief, `docs/retest-brief.md`. Branch `free-to-run`, `PROMPT_VERSION` `f1d6a959` (Revision 25). No code or prompt changed during the test, and nothing was written to Supabase, pushed or deployed. Each match was dry-run once with second attempts (`node scripts/run-pipeline.js --match <id> --dry-run`), and its output is kept as `review/retest-<id>.json`. The working notes are in `review/retest-progress.md`. Only this file changes.
+
+**Result: still not ready to go live, but only on cost.** Three of the four criteria pass. No published line has a factual error, every side published 4 or 5, and the only Groq problems recovered on retry. But at about 1,650 neurons a match, Cloudflare's 10,000 covers about 6 matches in 24 hours, not 7.
+
+**The 8 matches** (matchday 7, all `player_data` `ok`). 9 were finished with `ok` player data; 560606 Tottenham v Coventry (Mon 19 Oct) wasn't yet. No penalty event exists in the data.
+
+| match | why |
+|---|---|
+| 560609 Brighton 5-0 Crystal Palace (HT 3-0), Sun 14:00 | the biggest win; the only own goal (Canvot, Palace) |
+| 560605 Leeds 1-1 Man United (HT 0-1), Sun 14:00 | the only draw; Leeds came from behind |
+| 560611 Brentford 1-2 Liverpool (HT 1-0), Sat 15:00 | two red cards for the losers (Janelt, Yarmoliuk); Liverpool came from behind |
+| 560602 Fulham 1-0 Hull (HT 1-0), Sat 15:00 | a red card for the winners (Sessegnon) |
+| 560604 Bournemouth 2-0 Sunderland (HT 1-0), Sun 14:00 | a red card for the losers (Danso) |
+| 560610 Man City 3-2 Ipswich (HT 2-1), Sat 15:00 | high-scoring narrow home win, Haaland brace |
+| 560603 Everton 0-2 Chelsea (HT 0-0), Sat 12:30 | away win, Neto brace, both goals after half-time |
+| 560607 Newcastle 0-1 Aston Villa (HT 0-1), Sat 17:30 | narrow away win, the goal before half-time |
+
+Left out: 560608 Nottingham 0-1 Arsenal, the same shape as 560603 and 560607.
+
+**Runs.** Day 1 was Sun 18 Oct, 23:19–23:51:50 UK. Day 2 was Tue 20 Oct, 00:17–08:32:42 UK, starting 24 h 25 min after day 1's last run. Between day 2's first and second runs, the project owner stopped the 560610 run before it started; it made no model call. Every run exited 0. No 3036 came, and no completed match was rerun. Counts are passed every step / returned / published.
+
+| match | sides (per attempt) | neurons (per attempt) | Groq calls, tokens in/out, waited | run |
+|---|---|---|---|---|
+| 560609 | BHA 4/8/4; CRY 6/8/5 | 1,423 (703, 721) | 5, 18,664/2,154, 182 s | 387 s |
+| 560605 | LEE 5/8/5; MUN a1 2/8/2, a2 4/8/3 | 2,213 (707; 703 + 803) | 8, 27,691/3,644, 252 s | 495 s |
+| 560611 | BRE 5/8/5; LIV 6/8/5 | 1,450 (716, 735) | 4, 14,864/1,823, 121 s | 324 s |
+| 560602 | FUL a1 3/8/3, a2 5/8/2; HUL 4/8/4 | 2,151 (736 + 700; 716) | 6, 20,435/2,995, 182 s | 570 s |
+| 560604 | BOU 4/8/4; SUN 4/8/4 | 1,566 (819, 746) | 5, 17,266/2,079, 150 s | 320 s |
+| 560610 | MCI 6/8/5; IPS 5/8/5 | 1,476 (729, 747) | 5, 18,166/2,413, 182 s | 414 s |
+| 560603 | EVE 6/8/5; CHE 7/8/5 | 1,477 (786, 691) | 6, 17,243/2,300, 212 s | 444 s |
+| 560607 | NEW 4/8/4; AVL 5/8/5 | 1,456 (758, 697) | 4, 13,508/1,651, 91 s | 315 s |
+
+- Two of 16 sides needed a second attempt (Man United and Fulham), and both reached 5.
+- 144 lines returned, 85 passed every step, 75 published. What dropped the other 69:
+
+  | step | lines dropped |
+  |---|---|
+  | first checker | 27 |
+  | Groq | 16 |
+  | code gate | 11 |
+  | not selected | 10 |
+  | variety | 3 |
+  | unsure | 2 |
+
+- **The claim check** made no call, as Revision 24 set.
+- **The Groq retry recovered twice:**
+  - Everton's second request came back `json_validate_failed`, with no JSON. All 3 lines were readable when asked again.
+  - Man United's second-attempt request ran out of output (`length`) with no readable verdict for 2 lines. Both were readable when asked again.
+
+  Three more replies ran out of output (Leeds, Fulham and Hull, all on day 1). Where a truncated verdict had a failed rule, it counted as a fail and wasn't retried, as designed. All three of those fails were wrong drops:
+  - Hull's "Tzolakis pulled off a shift." under H1, though it has no number;
+  - Fulham's "Iwobi put in a shift. Goal deserved.", whose reason talks itself out of the fail;
+  - Leeds' "Trafford's saves saved us, but we need more firepower." under E7, with no reason, after a draw that fits it.
+- **Right drops, among them:** Sunderland's "Roofs made four saves" (Roefs misspelt, as in the go-live test), "finally" 3 times and "keeper" or "goalie" 3 times at the gate, Brighton's "Lucky" as a player name, and "Nice finish" or "pure class" about goals under E2.
+- **Wrong drops, among them:**
+  - Code gate:
+    - Brentford's "Lewis‑Potter gave us hope, a fine strike." failed as naming "Lewis". The model wrote a non-breaking hyphen (U+2011), and the name check split the name there.
+    - Newcastle's BANTER "Villans think a chant beats a win. Classic." failed Revision 25's rule 1 ("says win, but Newcastle lost"). "A win" there is general, not this match's result. It's the rule's first false positive.
+  - First checker:
+    - It read "Danso" as "Danson" (E1).
+    - It failed Bournemouth's "Danso's red was a gift." under E11, though Sunderland's red card helping Bournemouth is the right way round.
+    - It failed "Iwobi got the goal." as a name not listed.
+  - Groq:
+    - "second best" failed under H1 for Ipswich, but passed for Leeds and Newcastle.
+    - Chelsea's "Our attack eventually showed bite." failed under E5, though both goals came after a 0-0 half-time.
+- **Revision 25's rules** published no result-word or wrong-side error. Rule 2 never fired, and rule 1 fired once, wrongly. No candidate used "typical", "today" or "tonight".
+
+**Fact-check of the 75 published lines and notes** (Claude Code, against each match's data: every score, count, player, team, half, result, home or away, date, matchday, and which side each player's events helped).
+- **No factual errors.** No line or note states or implies a wrong score, count, player, team, half, result, venue, date or matchday, and every event cuts the right way. Examples: Brighton's "Canvot own goal helped us.", Liverpool's "Janelt's red card was a massive gift for us.", Leeds' "Trafford made two saves, Lammens three." and Villa's "Suzuki saved." (one save).
+- **The closest calls** are overstatements, which Revision 23 counted as rule breaks (E7), not factual errors:
+  - Liverpool's "Our defence looked like paper after that first goal.": Liverpool conceded nothing after it.
+  - Man United's "Our defence fell apart after the break.": they conceded once.
+  - Brentford's "Janelt's red left us exposed; should've been a straight dismissal.": it implies the red wasn't a straight one, which the data doesn't say.
+- **Rule breaks that got through** (each borderline):
+  - Describing the card, a goal or a save (E2): Brentford's "should've been a straight dismissal", Ipswich's "Nice strike", Villa's "Good reflexes" and Fulham's "Sessegnon's red was a massive blunder".
+  - Play after a red card, or timing (E5): Brentford's "left us exposed" and "Yarmoliuk's sending off killed any chance of a comeback", and Villa's "Suzuki's stop was a game-changer".
+  - Overstating (E7): the three closest calls above, plus Man United's "Lammens was a wall." and Leeds' "Our defence looked second best all over the pitch.", each after conceding one, and Ipswich's "Walton's heroics kept us alive." in a loss.
+  - Implying other matches (E3): Hull's "Still no points." and Chelsea's "our new talisman".
+  - A part of the team (E9): Bournemouth's "our midfield dominated" (the first checker failed Brighton's "forwards").
+  - Past results (B3): Man United's BANTER "but we love the trophies".
+  - Beyond football (B7): Sunderland's BANTER "tea parties … a proper brew".
+- **Style slips:**
+  - "Call me mad, but", one of Revision 24's new hedge examples, opens 4 published lines (Bournemouth, Man City, Chelsea, Newcastle) and 9 candidates. It's the new "If I'm being honest".
+  - "sieve" in 3 published lines (Brighton, Man City, Everton).
+  - "second best all over the pitch" in 2 (Leeds, Newcastle).
+  - Praising the other side's scorer: Palace's "Ayari lit it up. Pure class." and Everton's "Neto's brace shows Chelsea's attack is unstoppable."
+  - Formula BANTER: most of the 16 are "they [chant, think, love] …, but we …".
+  - "quiet evenings" for Fulham's 15:00 kickoff.
+  - Clunky lines: Leeds' "Back came later." and Everton's "Zero to nil at half-time".
+  - A BANTER note naming a nickname (the Toffees) that Chelsea's line doesn't use.
+
+**Against the live comments** (read-only; the 109 lines in Supabase for these 8 matches, from `main`'s paid model at `PROMPT_VERSION` `2056887e`).
+- **Facts:** both are right.
+- **Rule breaks:** the live set has more of them:
+  - numbers in `HOT_TAKE`s ("two top saves", "One save all game", "more than one", "four big saves");
+  - other-match words ("Haaland doubling up again", "Toughest watch from us this season", "worst I've seen in ages", "Typical City");
+  - "keeper" (Fulham).
+- **Volume:** the live set has 4–8 lines a side (now capped at 5) and 2–3 `BANTER` a side against 1.
+- **Writing:** the live lines read better. They're more varied and specific, with club songs (Blaydon Races, Marching On Together, You'll Never Walk Alone) and real nicknames. Some live `STAT` lines join two facts ("Brentford had two sent off and we only won by one. Mad."), where the re-test's are shorter and more literal.
+- **Overall:** the free pipeline is safer on the rules and as accurate, but blander and more repetitive.
+
+**The pass criteria.**
+
+| criterion | result | why |
+|---|---|---|
+| Zero factual errors in published lines | **Pass** | None in 75 lines and notes. The closest calls are three overstatements (E7), listed above. |
+| Every side at least 4 published, after second attempts | **Pass** | All 16 sides published 4 or 5: Brighton, Hull, Bournemouth, Sunderland and Newcastle 4, the rest 5. Man United (2 + 3) and Fulham (3 + 2) needed their second attempts. |
+| No "MODEL CALL FAILED", unparseable or Groq-stop runs | **Pass** | None of any of them. Two Groq replies had no readable verdict and recovered on the retry: Everton (560603, `json_validate_failed`) and Man United (560605, attempt 2, `length`). Three more replies ran out of output, but each truncated verdict had a failed rule, so it failed closed. |
+| Cost leaves room for about 7 matches in 24 hours | **Fail** | Neurons: 1,423–2,213 a match, mean 1,652. 7 matches would be about 11,600, and even with no second attempts about 10,300 (734 a side × 14). That's over 10,000, so about 6 fit. Groq is fine: 15–31k tokens a match (mean 20.9k), about 146k of its 200k a day for 7, and 4–8 calls a match. Time is fine: 315–570 s a match (mean 409 s). One run starts about 6 before its 40-minute cutoff, and a 7th waits for the next hourly run. The slowest match started at 39:59 would finish inside the 60-minute timeout. |
+
+**Matches a day:** about 6 on Cloudflare's neurons (10,000 / 1,652), about 9 on Groq's tokens, and about 6 a run on time (more over a day's hourly runs). An attempt costs 691–819 neurons (mean 734), at or above Revision 24's estimate of about 650–750.
+
+**Before going live** (for the next round; the test changes nothing):
+- **Cost:** a 7-match day needs about 14% fewer neurons a match (11,600 down to 10,000), or one of the steps moved off Cloudflare's allowance.
+- **The name check:** split names on U+2011 and other dashes as the player list does ("Lewis‑Potter").
+- **Rule 1:** "a win" after "beats" or in BANTER, as a general phrase.
+- **The checker:** its misreads of names ("Danson") and of E11 the right way round, and Groq's H1 on "second best" and "a shift".
+- **Repetition:** "Call me mad, but", "sieve", "second best" and formula BANTER.
+
 ## 1. Architecture
 
 ```
